@@ -7446,6 +7446,19 @@ if Globals.GatlingEnabled then
     end)
 end
 
+-- Built-in Anti-AFK (runs in background, no UI)
+task.defer(function()
+    if getgenv().AntiAFKActive then return end
+    repeat task.wait() until game:IsLoaded() and game.Players and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
+    getgenv().AntiAFKActive = true
+    local VirtualUser = game:GetService("VirtualUser")
+    local LocalPlayer = game.Players.LocalPlayer
+    LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
 -- Support for strategy scripts: TDS is in _G.TDS and shared.TDSTable. You can run a strategy in a
 -- second script (e.g. load Original.lua first, then run your strategy that calls TDS:Loadout(...), etc.)
 -- or save your strategy to tds/strats/run.lua and it will run automatically after the script loads.
