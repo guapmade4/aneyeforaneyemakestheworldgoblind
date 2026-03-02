@@ -4273,6 +4273,8 @@ function Window:Tab(opts)
         local theme = library.theme
         local fontFace = library.font_face
         local fontSize = library.font_size or 12
+        local allowHorizontalScroll = opts and opts.HorizontalScroll == true
+        local textService = allowHorizontalScroll and game:GetService("TextService") or nil
         local scroll = Instance.new("ScrollingFrame")
         scroll.Name = "LoggerScroll"
         scroll.Size = sz
@@ -4280,36 +4282,80 @@ function Window:Tab(opts)
         scroll.ClipsDescendants = true
         scroll.BorderSizePixel = 0
         scroll.BackgroundColor3 = theme.Element
-        scroll.ScrollBarThickness = 4
+        scroll.ScrollBarThickness = 0
+        scroll.ScrollBarImageTransparency = 1
         scroll.ScrollBarImageColor3 = theme.Accent
         scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-        scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        scroll.AutomaticCanvasSize = allowHorizontalScroll and Enum.AutomaticSize.XY or Enum.AutomaticSize.Y
         scroll.Parent = content
         local inner = Instance.new("Frame")
         inner.Name = "LoggerInner"
-        inner.Size = UDim2.new(1, 0, 0, 0)
+        inner.Size = allowHorizontalScroll and UDim2.new(0, 0, 0, 0) or UDim2.new(1, 0, 0, 0)
         inner.BackgroundTransparency = 1
-        inner.AutomaticSize = Enum.AutomaticSize.Y
+        inner.AutomaticSize = allowHorizontalScroll and Enum.AutomaticSize.XY or Enum.AutomaticSize.Y
         inner.Parent = scroll
         local layout = Instance.new("UIListLayout")
         layout.SortOrder = Enum.SortOrder.LayoutOrder
         layout.Padding = UDim.new(0, 2)
         layout.Parent = inner
+        if allowHorizontalScroll then
+            local pad = Instance.new("UIPadding")
+            pad.PaddingRight = UDim.new(0, 12)
+            pad.Parent = inner
+            task.defer(function()
+                if not inner or not inner.Parent or not scroll.Parent then return end
+                local spacer = Instance.new("Frame")
+                spacer.Name = "LoggerMinWidthSpacer"
+                spacer.Size = UDim2.new(0, math.max(200, scroll.AbsoluteSize.X - 8), 0, 0)
+                spacer.BackgroundTransparency = 1
+                spacer.LayoutOrder = -1
+                spacer.Parent = inner
+                scroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+                    if spacer and spacer.Parent then
+                        spacer.Size = UDim2.new(0, math.max(200, scroll.AbsoluteSize.X - 8), 0, 0)
+                    end
+                end)
+                local trail = Instance.new("Frame")
+                trail.Name = "LoggerTrail"
+                trail.Size = UDim2.new(0, 8000, 0, 0)
+                trail.BackgroundTransparency = 1
+                trail.LayoutOrder = 999999
+                trail.Parent = inner
+            end)
+        end
+        local layoutOrderNext = 0
         local logger = {}
         function logger:Log(msg)
             if not inner or not inner.Parent then return end
             local line = Instance.new("TextLabel")
-            line.Text = tostring(msg or "")
-            line.Size = UDim2.new(1, -8, 0, 14)
+            local text = tostring(msg or "")
+            line.Text = text
+            if allowHorizontalScroll and textService then
+                line.TextWrapped = false
+                local ok, size = pcall(function()
+                    local font = fontFace or Enum.Font.SourceSans
+                    return textService:GetTextSize(text, fontSize, font, Vector2.new(10000, 10000))
+                end)
+                if ok and size then
+                    line.Size = UDim2.new(0, size.X + 12, 0, math.max(14, size.Y + 2))
+                else
+                    line.Size = UDim2.new(0, 400, 0, 14)
+                    line.AutomaticSize = Enum.AutomaticSize.Y
+                end
+            else
+                line.Size = UDim2.new(1, -8, 0, 14)
+                line.AutomaticSize = Enum.AutomaticSize.Y
+                line.TextWrapped = true
+            end
             line.Position = UDim2.new(0, 0, 0, 0)
             line.BackgroundTransparency = 1
             line.TextColor3 = theme.Text
             line.TextSize = fontSize
             line.TextXAlignment = Enum.TextXAlignment.Left
             line.TextYAlignment = Enum.TextYAlignment.Top
-            line.TextWrapped = true
-            line.AutomaticSize = Enum.AutomaticSize.Y
             if fontFace then pcall(function() line.FontFace = fontFace end) end
+            line.LayoutOrder = layoutOrderNext
+            layoutOrderNext = layoutOrderNext + 1
             line.Parent = inner
         end
         function logger:Clear()
@@ -4317,6 +4363,7 @@ function Window:Tab(opts)
                 for _, c in ipairs(inner:GetChildren()) do
                     if c:IsA("TextLabel") then c:Destroy() end
                 end
+                layoutOrderNext = 0
             end
         end
         return logger
@@ -5331,8 +5378,8 @@ Window:Line()
 local Logger
 do
     local RecorderTab = Window:Tab({Title = "Recorder", Icon = "camera"})
-    Logger = RecorderTab:CreateLogger({Title = ">.<", Size = UDim2.new(0, 330, 0, 300), Side = "Right"})
-    local Recorder = RecorderTab:CreateLogger({Title = "Recorder", Size = UDim2.new(0, 330, 0, 230), Side = "Left"})
+    Logger = RecorderTab:CreateLogger({Title = ">.<", Size = UDim2.new(0, 330, 0, 300), Side = "Right", HorizontalScroll = true})
+    local Recorder = RecorderTab:CreateLogger({Title = "Recorder", Size = UDim2.new(0, 330, 0, 230), Side = "Left", HorizontalScroll = true})
 
     -- Log map and equipped troops to >.< when in game
     task.defer(function()
@@ -5549,17 +5596,17 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
 
     Misc:Section({Title = "Exploits", Side = "Right"})
     Misc:Toggle({
-        Title = "Sticker Spam",
+        Title = "Server Lag",
         Desc = "This will drop everyones FPS to like 5 (you will not be able to see this unless you have an alt)",
         Value = false,
         Callback = function(v)
-            StickerSpam = v
+            ServerLag = v
 
-            if StickerSpam then
+            if ServerLag then
                 task.spawn(function()
-                    while StickerSpam do
+                    while ServerLag do
                         for i = 1, 9999 do
-                            if not StickerSpam then break end
+                            if not ServerLag then break end
                             local args = {"Flex"}
                             pcall(function()
                                 game:GetService("ReplicatedStorage"):WaitForChild("Network"):WaitForChild("Sticker"):WaitForChild("URE:Show"):FireServer(unpack(args))
