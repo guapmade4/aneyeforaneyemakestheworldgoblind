@@ -1,6 +1,3 @@
---- -- - h-hell ohel heoo hl    
--- made b y Microphone
-
 local library = {
     theme = {
         ["Accent"] = Color3.fromRGB(53, 60, 108),
@@ -526,7 +523,7 @@ do
             end;
 
             if data.callback then
-                data.callback(toggle.value);
+                pcall(data.callback, toggle.value);
             end;
         end;
 
@@ -1013,6 +1010,14 @@ do
         local option_holder_original_size = dim2(1, 0, 0, 110);
         function dropdown:set_open(bool)
             if bool then
+                if next(dropdown.options) == nil then return end
+                local visibleCount = 0
+                for _, opt in pairs(dropdown.options) do
+                    if opt and opt.object and (opt.object.Visible == nil or opt.object.Visible) then
+                        visibleCount = visibleCount + 1
+                    end
+                end
+                if visibleCount == 0 then return end
                 for other, _ in pairs(library.open_dropdowns or {}) do
                     if other ~= dropdown and other.set_open then
                         other:set_open(false);
@@ -1042,10 +1047,77 @@ do
                 opt.Parent = library.holder;
                 local drop = objects["dropdown"];
                 local ap, as = drop.AbsolutePosition, drop.AbsoluteSize;
-                opt.Position = UDim2.fromOffset(ap.X, ap.Y + as.Y + 2);
-                opt.Size = UDim2.fromOffset(as.X, 110);
+                local optionCount = 0
+                for _, opt in pairs(dropdown.options) do
+                    if opt and opt.object and (opt.object.Visible == nil or opt.object.Visible) then
+                        optionCount = optionCount + 1
+                    end
+                end
+                local rowHeight = 18
+                local listHeight = optionCount > 0 and math.min(280, math.max(36, optionCount * rowHeight)) or 110
+                local listTop = ap.Y + as.Y + 2
+                local winBottom = nil
+                local p = drop.Parent
+                while p do
+                    if p.Name == "Main_Frame" and p.AbsoluteSize.Y > 0 then
+                        winBottom = p.AbsolutePosition.Y + p.AbsoluteSize.Y
+                        break
+                    end
+                    p = p.Parent
+                end
+                if winBottom and listTop < winBottom then
+                    local available = math.floor(winBottom - listTop - 8)
+                    if available > 0 then
+                        listHeight = math.min(listHeight, math.max(36, available))
+                    end
+                end
+                dropdown._list_height = listHeight
+                opt.Position = UDim2.fromOffset(ap.X, listTop);
+                opt.Size = UDim2.fromOffset(as.X, listHeight);
+                if not library._dropdown_position_updater then
+                    library._dropdown_position_updater = run_service.RenderStepped:Connect(function()
+                        for d, _ in pairs(library.open_dropdowns or {}) do
+                            if d and d.update_position then pcall(d.update_position, d) end
+                        end
+                    end);
+                end
             end;
             objects["open"].Text = bool and "-" or "+";
+        end;
+
+        function dropdown.update_position(d)
+            if not d.open then return end
+            local o = objects["option_holder"];
+            if o.Parent ~= library.holder then return end
+            local drop = objects["dropdown"];
+            if not drop or not drop.Parent then return end
+            local ap, as = drop.AbsolutePosition, drop.AbsoluteSize;
+            local visibleCount = 0
+            for _, opt in pairs(d.options) do
+                if opt and opt.object and (opt.object.Visible == nil or opt.object.Visible) then
+                    visibleCount = visibleCount + 1
+                end
+            end
+            local rowHeight = 18
+            local listHeight = visibleCount > 0 and math.min(280, math.max(36, visibleCount * rowHeight)) or 110
+            local listTop = ap.Y + as.Y + 2
+            local winBottom = nil
+            local p = drop.Parent
+            while p do
+                if p.Name == "Main_Frame" and p.AbsoluteSize.Y > 0 then
+                    winBottom = p.AbsolutePosition.Y + p.AbsoluteSize.Y
+                    break
+                end
+                p = p.Parent
+            end
+            if winBottom and listTop < winBottom then
+                local available = math.floor(winBottom - listTop - 8)
+                if available > 0 and listHeight > available then
+                    listHeight = math.max(36, available)
+                end
+            end
+            o.Position = UDim2.fromOffset(ap.X, listTop);
+            o.Size = UDim2.fromOffset(as.X, listHeight);
         end;
 
         function dropdown:set(option)
@@ -2951,6 +3023,7 @@ do
             callback = Data.Callback or Data.callback or function() end;
             options = Data.Options or Data.options or {};
             multi = Data.Multi or Data.multi or false;
+            searchable = Data.Searchable or Data.searchable or false;
         };
 
         local new_dropdown, objects = utility.new_dropdown(
@@ -2987,20 +3060,46 @@ do
         local name = Data.Name or Data.name or "Textbox";
         local default = Data.Default or Data.default or "";
         local placeholder = Data.Placeholder or Data.placeholder or "";
-        local box = utility.new("TextBox", {
+        -- Keybind-style wrapper: Main outer + Inline inner, rounded corners
+        local wrap = utility.new("Frame", {
             Parent = self.objects.content,
+            Name = name .. "_wrap",
+            Size = dim2(1, 0, 0, 20),
+            BorderSizePixel = 0,
+            BackgroundColor3 = library.theme.Main or Color3.fromRGB(26, 26, 26)
+        });
+        utility.add_to_theme(wrap, { BackgroundColor3 = "Main" });
+        local wrapCorner = Instance.new("UICorner");
+        wrapCorner.CornerRadius = UDim.new(0, 4);
+        wrapCorner.Parent = wrap;
+        local inline = utility.new("Frame", {
+            Parent = wrap,
+            Name = "inline",
+            Position = dim2(0, 1, 0, 1),
+            Size = dim2(1, -2, 1, -2),
+            BorderSizePixel = 0,
+            BackgroundColor3 = library.theme.Inline or Color3.fromRGB(45, 45, 45)
+        });
+        utility.add_to_theme(inline, { BackgroundColor3 = "Inline" });
+        local inlineCorner = Instance.new("UICorner");
+        inlineCorner.CornerRadius = UDim.new(0, 3);
+        inlineCorner.Parent = inline;
+        local box = utility.new("TextBox", {
+            Parent = inline,
             FontFace = lib_font,
             TextColor3 = library.theme.Text,
+            PlaceholderColor3 = library.theme["Text Inactive"] or Color3.fromRGB(188, 188, 188),
             PlaceholderText = placeholder,
             Text = default,
-            ClearTextOnFocus = Data.ClearTextOnFocus ~= false,
+            ClearTextOnFocus = Data.ClearTextOnFocus == true,
             Name = name,
-            Size = dim2(1, 0, 0, 18),
+            Size = dim2(1, -8, 1, -4),
+            Position = dim2(0, 4, 0, 2),
             BorderSizePixel = 0,
             TextSize = library.font_size,
-            BackgroundColor3 = library.theme.Element
+            BackgroundTransparency = 1
         });
-        utility.add_to_theme(box, { TextColor3 = "Text", BackgroundColor3 = "Element" });
+        utility.add_to_theme(box, { TextColor3 = "Text" });
         if Data.Callback then
             box.FocusLost:Connect(function() Data.Callback(box.Text) end);
         end;
@@ -3151,7 +3250,6 @@ local DefaultSettings = {
     AutoMercenary = false,
     AutoMilitary = false,
     GatlingEnabled = false,
-    GatlingOption = false,
     GatlingMultiply = 10,
     GatlingCooldown = 0.05,
     GatlingCriticalRange = 100,
@@ -3171,7 +3269,6 @@ local DefaultSettings = {
     Multiply = 60,
     PickupMethod = "Pathfinding",
     StreamerMode = false,
-    HideUsername = false,
     StreamerName = "",
     tagName = "None",
     Modifiers = {},
@@ -3332,16 +3429,18 @@ local function collectTagOptions()
             end
         end
     end
-    local content = ReplicatedStorage:FindFirstChild("Content")
+    local content = ReplicatedStorage:FindFirstChild("Content") or ReplicatedStorage:WaitForChild("Content", 5)
     if content then
-        local nametag = content:FindFirstChild("Nametag")
+        local nametag = content:FindFirstChild("Nametag") or content:WaitForChild("Nametag", 2)
         if nametag then
-            addFolder(nametag:FindFirstChild("Basic"))
-            addFolder(nametag:FindFirstChild("Exclusive"))
+            for _, folder in ipairs(nametag:GetChildren()) do
+                if folder:IsA("Folder") then
+                    addFolder(folder)
+                end
+            end
         end
     end
     table.sort(list)
-    table.insert(list, 1, "None")
     return list
 end
 
@@ -3439,7 +3538,6 @@ local function EnsureSpoofName()
     local nm = Globals.StreamerName
     if not nm or nm == "" then
         nm = MakeSpoofName()
-        SetSetting("StreamerName", nm)
     end
     return nm
 end
@@ -3506,19 +3604,34 @@ local function ApplySpoofToInstance(inst, OldA, OldB, NewName)
             end
             if changed then
                 if SpoofTextCache[inst] == nil then
-                    SpoofTextCache[inst] = txt
+                    SpoofTextCache[inst] = {
+                        text = txt,
+                        textX = inst.TextXAlignment,
+                        textY = inst.TextYAlignment
+                    }
                 end
                 inst.Text = t
+                pcall(function()
+                    inst.TextXAlignment = Enum.TextXAlignment.Center
+                    inst.TextYAlignment = Enum.TextYAlignment.Center
+                end)
             end
         end
     end
 end
 
 local function RestoreSpoofText()
-    for inst, txt in pairs(SpoofTextCache) do
+    for inst, cached in pairs(SpoofTextCache) do
         if inst and inst.Parent then
             pcall(function()
+                local txt = type(cached) == "table" and cached.text or cached
                 inst.Text = txt
+                if type(cached) == "table" and cached.textX then
+                    inst.TextXAlignment = cached.textX
+                end
+                if type(cached) == "table" and cached.textY then
+                    inst.TextYAlignment = cached.textY
+                end
             end)
         end
         SpoofTextCache[inst] = nil
@@ -3528,9 +3641,6 @@ end
 local function GetPrivacyName()
     if Globals.StreamerMode then
         return EnsureSpoofName()
-    end
-    if Globals.HideUsername then
-        return "????????"
     end
     return nil
 end
@@ -3660,6 +3770,15 @@ local function StopPrivacyMode()
     RestoreStreamerTag()
     SetLocalDisplayName(OriginalDisplayName)
     PrivacyRunning = false
+    -- Re-apply original name a few times so it sticks if the game overwrites it
+    task.spawn(function()
+        for _ = 1, 5 do
+            task.wait(0.25)
+            if not PrivacyRunning and OriginalDisplayName then
+                pcall(function() LocalPlayer.DisplayName = OriginalDisplayName end)
+            end
+        end
+    end)
 end
 
 local function StartPrivacyMode()
@@ -3669,6 +3788,14 @@ local function StartPrivacyMode()
     PrivacyRunning = true
     ClearPrivacyConns()
     ApplyPrivacyOnce()
+    -- When the game (e.g. leaderboard) overwrites DisplayName, force spoof back immediately
+    AddPrivacyConn(LocalPlayer:GetPropertyChangedSignal("DisplayName"):Connect(function()
+        if not GetPrivacyName() then return end
+        local nm = EnsureSpoofName()
+        if LocalPlayer.DisplayName ~= nm then
+            pcall(function() LocalPlayer.DisplayName = nm end)
+        end
+    end))
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if pg then
         HookPrivacyRoot(pg)
@@ -3703,7 +3830,7 @@ local function StartPrivacyMode()
             return
         end
         ApplyPrivacyOnce()
-        task.delay(0.5, step)
+        task.delay(0.25, step)
     end
     task.defer(step)
 end
@@ -3881,7 +4008,7 @@ local function GetEquippedTowers()
             end
         end
     end
-    return #towers > 0 and towers or {"None"}
+    return #towers > 0 and towers or {}
 end
 
 CurrentEquippedTowers = GetEquippedTowers()
@@ -3907,9 +4034,65 @@ local function ApplyGatlingHook()
 end
 
 -- // ??? UI (Original library + adapter for Title/Value/List)
-local rawWindow = library:Window({Name = ">.<"})
+-- Start with blank title so library never shows 話筒 in unsupported font (no ? flash)
+local rawWindow = library:Window({Name = ""})
 if rawWindow.objects and rawWindow.objects.title then
-    rawWindow.objects.title.Text = ">.<"
+    local titleLabel = rawWindow.objects.title
+    local full = "話筒"
+    titleLabel.Text = ""
+    -- Try multiple CJK-capable fonts so both 話 and 筒 render (no ?)
+    local cjkAttempts = {
+        function() return Font.new("rbxasset://fonts/families/Arial.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal) end,
+        function() return Font.new("rbxassetid://3521017517", Enum.FontWeight.Regular, Enum.FontStyle.Normal) end,
+        function() return Font.new("rbxassetid://4595949878", Enum.FontWeight.Regular, Enum.FontStyle.Normal) end,
+    }
+    for _, tryFont in ipairs(cjkAttempts) do
+        local ok = pcall(function()
+            titleLabel.FontFace = tryFont()
+        end)
+        if ok and titleLabel.FontFace and titleLabel.FontFace.Family ~= "Legacy" then break end
+    end
+    titleLabel.Text = ""
+    task.spawn(function()
+        task.wait(0.15)
+        if not titleLabel or not titleLabel.Parent then return end
+        titleLabel.Text = ""
+        local function firstNChars(s, n)
+            local endByte = utf8.offset(s, n + 1)
+            return s:sub(1, endByte and (endByte - 1) or #s)
+        end
+        local charCount = utf8.len(full)
+        local function blinkCursor(baseText, duration)
+            local deadline = tick() + duration
+            local showUnderscore = true
+            while tick() < deadline and titleLabel and titleLabel.Parent do
+                titleLabel.Text = baseText .. (showUnderscore and "_" or " ")
+                showUnderscore = not showUnderscore
+                task.wait(0.2)
+            end
+            if titleLabel and titleLabel.Parent then titleLabel.Text = baseText .. "_" end
+        end
+        while titleLabel and titleLabel.Parent do
+            -- Type out one UTF-8 character at a time (no partial bytes = no ?)
+            for i = 1, charCount do
+                if not titleLabel or not titleLabel.Parent then break end
+                local base = firstNChars(full, i)
+                blinkCursor(base, 0.55)
+            end
+            if not titleLabel or not titleLabel.Parent then break end
+            -- Wait 4 seconds with blinking cursor
+            blinkCursor(full, 4)
+            if not titleLabel or not titleLabel.Parent then break end
+            -- Delete one character at a time with blinking cursor
+            for i = charCount, 1, -1 do
+                if not titleLabel or not titleLabel.Parent then break end
+                local base = firstNChars(full, i - 1)
+                blinkCursor(base, 0.55)
+            end
+            if titleLabel and titleLabel.Parent then titleLabel.Text = "" end
+            task.wait(0.6)
+        end
+    end)
 end
 local currentSection
 local Window = {}
@@ -3982,7 +4165,7 @@ function Window:Tab(opts)
             if currentSection then
                 local oT, oD, oS, oB, oTx = currentSection.Toggle, currentSection.Dropdown, currentSection.Slider, currentSection.Button, currentSection.Textbox
                 if oT then currentSection.Toggle = function(s, o) return oT(s, {Name = o.Title or o.Name, Default = o.Value, Callback = o.Callback}) end end
-                if oD then currentSection.Dropdown = function(s, o) local def = o.Value; if def == nil and o.List and #o.List > 0 then def = o.Multi and {} or o.List[1] end; local a, b = oD(s, {Name = o.Title or o.Name, Options = o.List or {}, Default = def, Multi = o.Multi, Callback = o.Callback}); return b or a end end
+                if oD then currentSection.Dropdown = function(s, o) local def = o.Value; if def == nil and o.List and #o.List > 0 then def = o.Multi and {} or o.List[1] end; local a, b = oD(s, {Name = o.Title or o.Name, Options = o.List or {}, Default = def, Multi = o.Multi, Callback = o.Callback, Searchable = o.Searchable}); return b or a end end
                 if oS then currentSection.Slider = function(s, o) return oS(s, {Name = o.Title or o.Name, Min = o.Min or 0, Max = o.Max or 100, Default = o.Value, Callback = o.Callback, Decimals = o.Rounding or 1, Sub = o.Suffix or ""}) end end
                 if oB then currentSection.Button = function(s, o) return oB(s, {Name = o.Title or o.Name, Callback = o.Callback}) end end
                 if oTx then currentSection.Textbox = function(s, o) return oTx(s, {Name = o.Title or o.Name, Default = o.Value or "", Placeholder = o.Placeholder or "", Callback = o.Callback, ClearTextOnFocus = o.ClearTextOnFocus}) end end
@@ -4015,7 +4198,7 @@ function Window:Tab(opts)
             end
             local oT, oD, oS, oB, oTx = currentSection.Toggle, currentSection.Dropdown, currentSection.Slider, currentSection.Button, currentSection.Textbox
             if oT then currentSection.Toggle = function(s, o) return oT(s, {Name = o.Title or o.Name, Default = o.Value, Callback = o.Callback}) end end
-            if oD then currentSection.Dropdown = function(s, o) local def = o.Value; if def == nil and o.List and #o.List > 0 then def = o.Multi and {} or o.List[1] end; local a, b = oD(s, {Name = o.Title or o.Name, Options = o.List or {}, Default = def, Multi = o.Multi, Callback = o.Callback}); return b or a end end
+            if oD then currentSection.Dropdown = function(s, o) local def = o.Value; if def == nil and o.List and #o.List > 0 then def = o.Multi and {} or o.List[1] end; local a, b = oD(s, {Name = o.Title or o.Name, Options = o.List or {}, Default = def, Multi = o.Multi, Callback = o.Callback, Searchable = o.Searchable}); return b or a end end
             if oS then currentSection.Slider = function(s, o) return oS(s, {Name = o.Title or o.Name, Min = o.Min or 0, Max = o.Max or 100, Default = o.Value, Callback = o.Callback, Decimals = o.Rounding or 1, Sub = o.Suffix or ""}) end end
             if oB then currentSection.Button = function(s, o) return oB(s, {Name = o.Title or o.Name, Callback = o.Callback}) end end
             if oTx then currentSection.Textbox = function(s, o) return oTx(s, {Name = o.Title or o.Name, Default = o.Value or "", Placeholder = o.Placeholder or "", Callback = o.Callback, ClearTextOnFocus = o.ClearTextOnFocus}) end end
@@ -4028,6 +4211,29 @@ function Window:Tab(opts)
     t.Button = function(_, o) ensureSection(); if currentSection and currentSection.Button then return currentSection:Button(o) end end
     t.Textbox = function(_, o) ensureSection(); if currentSection and currentSection.Textbox then return currentSection:Textbox(o) end end
     t.Label = function(_, o) ensureSection(); if currentSection and currentSection.Label then return currentSection:Label({Name = o.Title or o.Name or ""}) end end
+    t.Divider = function(_)
+        ensureSection()
+        if not currentSection or not currentSection.objects or not currentSection.objects.content then return end
+        local theme = library.theme
+        local content = currentSection.objects.content
+        local div = Instance.new("Frame")
+        div.Name = "Divider"
+        div.Size = UDim2.new(1, -4, 0, 2)
+        div.BackgroundColor3 = theme.Accent
+        div.BorderSizePixel = 0
+        div.Parent = content
+        local divStroke = Instance.new("UIStroke", div)
+        divStroke.Color = theme.Border or theme.Inline or Color3.fromRGB(40, 40, 50)
+        divStroke.Thickness = 1
+        divStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local divGrad = Instance.new("UIGradient")
+        divGrad.Rotation = 90
+        divGrad.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(167, 167, 167))
+        }
+        divGrad.Parent = div
+    end
     t.CreateLogger = function(_, opts)
         local title = opts and (opts.Title or opts.Name) or "STRATEGY LOGGER:"
         local logHeight = 280
@@ -4258,6 +4464,8 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
         end
     end
 
+    Main:Divider()
+
     Main:Button({
         Title = "Upgrade Selected",
         Desc = "",
@@ -4351,15 +4559,15 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
     })
 
     Main:Section({Title = "Gatling Gun", Side = "Left"})
-    local gatlingSubRow
+    local gatlingFeatureRows = {}
     Main:Toggle({
-        Title = "Auto Gatling Enabled",
+        Title = "Enable",
         Desc = "When on, applies gatling hook so your shots use Multiply/Cooldown below.",
         Value = Globals.GatlingEnabled,
         Callback = function(state)
             SetSetting("GatlingEnabled", state)
-            if gatlingSubRow then
-                gatlingSubRow.Visible = state
+            for _, row in ipairs(gatlingFeatureRows) do
+                row.Visible = state
             end
             if state then
                 if ApplyGatlingHook() then
@@ -4370,18 +4578,8 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             end
         end
     })
-    local _, _, gatlingSubObjs = Main:Toggle({
-        Title = "Gatling Option",
-        Desc = "Extra option when Auto Gatling is enabled.",
-        Value = Globals.GatlingOption,
-        Callback = function(v) SetSetting("GatlingOption", v) end
-    })
-    gatlingSubRow = gatlingSubObjs and gatlingSubObjs["toggle"]
-    if gatlingSubRow then
-        gatlingSubRow.Visible = Globals.GatlingEnabled
-    end
 
-    Main:Slider({
+    local _, _, multObjs = Main:Slider({
         Title = "Gatling Multiply",
         Min = 1,
         Max = 50,
@@ -4391,8 +4589,9 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             if Globals.GatlingEnabled then ApplyGatlingHook() end
         end
     })
+    if multObjs and multObjs["slider"] then table.insert(gatlingFeatureRows, multObjs["slider"]) end
 
-    Main:Slider({
+    local _, _, cdObjs = Main:Slider({
         Title = "Gatling Cooldown",
         Min = 0.01,
         Max = 1,
@@ -4402,8 +4601,9 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             if Globals.GatlingEnabled then ApplyGatlingHook() end
         end
     })
+    if cdObjs and cdObjs["slider"] then table.insert(gatlingFeatureRows, cdObjs["slider"]) end
 
-    Main:Slider({
+    local _, _, rangeObjs = Main:Slider({
         Title = "Critical Range",
         Desc = "Target enemies this close to the exit first",
         Min = 10,
@@ -4413,6 +4613,11 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             SetSetting("GatlingCriticalRange", val)
         end
     })
+    if rangeObjs and rangeObjs["slider"] then table.insert(gatlingFeatureRows, rangeObjs["slider"]) end
+
+    for _, row in ipairs(gatlingFeatureRows) do
+        row.Visible = Globals.GatlingEnabled
+    end
 
     local statsSec = Main:Section({Title = "Stats", Side = "Right"})
     local statsContent = statsSec and statsSec.objects and statsSec.objects.content
@@ -4908,7 +5113,14 @@ end
         "Rocketeer", "Scout", "Shotgunner", "Slasher", "Sledger", "Sniper", "Snowballer", "Soldier",
         "Spotlight Tech", "Swarmer", "Tesla", "Toxic Gunner", "Trapper", "Turret", "War Machine", "Warden", "Warlock"
     }
-    Main:Dropdown({
+    local equipperSearch = Main:Textbox({
+        Title = "Search",
+        Placeholder = "Microphone", --Search troops...
+        Value = "",
+        ClearTextOnFocus = false,
+        Callback = function() end
+    })
+    local equipperDropdown = Main:Dropdown({
         Title = "Equip:",
         Desc = "Select towers to equip (multi-select). Must be in a game.",
         List = EquipperTowerList,
@@ -4955,14 +5167,57 @@ end
             end)
         end
     })
-
-end
+    if equipperSearch and equipperSearch.box and equipperDropdown and equipperDropdown.options then
+        equipperSearch.box:GetPropertyChangedSignal("Text"):Connect(function()
+            local q = string.lower((equipperSearch.box.Text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+            local visibleCount = 0
+            for name, opt in pairs(equipperDropdown.options) do
+                if opt and opt.object then
+                    local show = q == "" or (name ~= "" and string.find(string.lower(name), q, 1, true))
+                    opt.object.Visible = show
+                    if show then visibleCount = visibleCount + 1 end
+                end
+            end
+            if visibleCount == 0 and equipperDropdown.open and equipperDropdown.set_open then
+                equipperDropdown:set_open(false)
+            elseif visibleCount > 0 and not equipperDropdown.open and equipperDropdown.set_open and q ~= "" then
+                equipperDropdown:set_open(true)
+            end
+        end)
+        equipperSearch.box.Focused:Connect(function()
+            if equipperDropdown and equipperDropdown.options then
+                local visibleCount = 0
+                for _, opt in pairs(equipperDropdown.options) do
+                    if opt and opt.object and (opt.object.Visible == nil or opt.object.Visible) then visibleCount = visibleCount + 1 end
+                end
+                if visibleCount > 0 and not equipperDropdown.open and equipperDropdown.set_open then
+                    equipperDropdown:set_open(true)
+                end
+            end
+        end)
+        equipperSearch.box.FocusLost:Connect(function()
+            task.defer(function()
+                if not equipperDropdown or not equipperDropdown.open then
+                    if equipperSearch and equipperSearch.box then
+                        equipperSearch.box.Text = ""
+                    end
+                    if equipperDropdown then
+                        for _, opt in pairs(equipperDropdown.options or {}) do
+                            if opt and opt.object then opt.object.Visible = true end
+                        end
+                        if equipperDropdown.open and equipperDropdown.set_open then
+                            equipperDropdown:set_open(false)
+                        end
+                    end
+                end
+            end)
+        end)
+    end
 
 Window:Line()
 
 local Strategies = Window:Tab({Title = "Strategies", Icon = "newspaper"}) do
-    -- Left column: autostrat (main, farm, abilities)
-    Strategies:Section({Title = "Main", Side = "Left"})
+    Strategies:Section({Title = "Settings", Side = "Left"})
     Strategies:Toggle({
         Title = "Auto Rejoin",
         Desc = "Rejoins the gamemode after you've won and does the strategy again.",
@@ -4975,6 +5230,7 @@ local Strategies = Window:Tab({Title = "Strategies", Icon = "newspaper"}) do
         Value = Globals.AutoSkip,
         Callback = function(v) SetSetting("AutoSkip", v) end
     })
+    Strategies:Section({Title = "Main", Side = "Left"})
     Strategies:Toggle({
         Title = "Auto Chain",
         Desc = "Chains Commander Ability",
@@ -5251,16 +5507,11 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         Value = Globals.AntiLag,
         Callback = function(v)
             SetSetting("AntiLag", v)
-        end
-    })
-
-    Misc:Toggle({
-        Title = "Disable 3d rendering",
-        Desc = "Turns off 3d rendering",
-        Value = Globals.Disable3DRendering,
-        Callback = function(v)
-            SetSetting("Disable3DRendering", v)
-            Apply3dRendering()
+            if v then
+                ApplyAntiLag()
+            else
+                RemoveAntiLag()
+            end
         end
     })
 
@@ -5296,22 +5547,23 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         end
     })
 
-    Misc:Section({Title = "Experimental"})
+    Misc:Section({Title = "Exploits", Side = "Right"})
     Misc:Toggle({
         Title = "Sticker Spam",
         Desc = "This will drop everyones FPS to like 5 (you will not be able to see this unless you have an alt)",
         Value = false,
         Callback = function(v)
             StickerSpam = v
-            
+
             if StickerSpam then
                 task.spawn(function()
                     while StickerSpam do
                         for i = 1, 9999 do
                             if not StickerSpam then break end
-                            
                             local args = {"Flex"}
-                            game:GetService("ReplicatedStorage"):WaitForChild("Network"):WaitForChild("Sticker"):WaitForChild("URE:Show"):FireServer(unpack(args))
+                            pcall(function()
+                                game:GetService("ReplicatedStorage"):WaitForChild("Network"):WaitForChild("Sticker"):WaitForChild("URE:Show"):FireServer(unpack(args))
+                            end)
                         end
                         task.wait()
                     end
@@ -5320,31 +5572,53 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         end
     })
 
-    Misc:Button({
-        Title = "Unlock Admin+ (Sandbox)",
-        Desc = "Keep in mind that some features such as selecting maps, spawning in enemies and changing tower stats will not work!",
-        Callback = function()
-            if GameState == "GAME" then
-                local args = {
-                    game.Players.LocalPlayer.UserId,
-                    true
-                }
-                
-                game:GetService("ReplicatedStorage"):WaitForChild("Network"):WaitForChild("Sandbox"):WaitForChild("RE:SetAdmin"):FireServer(unpack(args))
+    Misc:Section({Title = "Streamer Mode", Side = "Right"})
+    Misc:Toggle({
+        Title = "Enable",
+        Desc = "",
+        Value = Globals.StreamerMode,
+        Callback = function(v)
+            SetSetting("StreamerMode", v)
+            UpdatePrivacyState()
+        end
+    })
 
-                Window:Notify({
-                    Title = "ADS",
-                    Desc = "Successfully unlocked Admin+ Mode!",
-                    Time = 3,
-                    Type = "normal"
-                })
+    Misc:Textbox({
+        Title = "Streamer Name",
+        Desc = "",
+        Placeholder = "Spoof Name",
+        Default = Globals.StreamerName or "",
+        ClearTextOnFocus = false,
+        Callback = function(value)
+            SetSetting("StreamerName", value or "")
+            UpdatePrivacyState()
+        end
+    })
+
+    Misc:Section({Title = "Tags", Side = "Right"})
+    local tagOptions = collectTagOptions()
+    local tagValue = Globals.tagName or ""
+    if tagValue == "None" or not table.find(tagOptions, tagValue) then
+        tagValue = ""
+    end
+    Misc:Dropdown({
+        Title = "Select",
+        Desc = "",
+        List = tagOptions,
+        Value = tagValue,
+        Callback = function(choice)
+            local selected
+            if type(choice) == "string" then
+                selected = choice
+            elseif type(choice) == "table" and next(choice) then
+                selected = choice.name or choice[1]
+            end
+            selected = (selected and selected ~= "" and selected) or ""
+            SetSetting("tagName", selected)
+            if selected == "" then
+                stopTagChanger()
             else
-                Window:Notify({
-                    Title = "ADS",
-                    Desc = "You must be in Sandbox mode for this to work!",
-                    Time = 3,
-                    Type = "normal"
-                })
+                startTagChanger()
             end
         end
     })
@@ -5452,337 +5726,12 @@ local function addKeybindRow(parent, labelText, currentKey, onKeySet)
     return row, updateBtn
 end
 
--- Configs stored in tds folder as cfg_<name>.json (same folder as settings.json for persistence)
-local function ensureTDSFolder()
-    if not makefolder then return false end
-    pcall(function() makefolder(TDSFolder) end)
-    return true
-end
-local function sanitizeConfigName(name)
-    if not name or type(name) ~= "string" then return "" end
-    local s = name:gsub("^%s*(.-)%s*$", "%1"):gsub("^.*[/\\]", ""):gsub("%.json$", "")
-    return (s ~= "" and s) or ""
-end
-local function getConfigPath(name)
-    local safe = sanitizeConfigName(name)
-    if safe == "" then return nil end
-    return TDSFolder .. "/cfg_" .. safe .. ".json"
-end
-local function listConfigNames()
-    ensureTDSFolder()
-    if not listfolder then return {} end
-    local seen = {}
-    local list = {}
-    local ok, files = pcall(listfolder, TDSFolder)
-    if ok and type(files) == "table" then
-        for _, f in ipairs(files) do
-            local name = type(f) == "string" and f:match("^cfg_(.+)%.json$")
-            if name and name ~= "" and name ~= "settings" and not seen[name] then seen[name] = true table.insert(list, name) end
-        end
-        for k, v in pairs(files) do
-            local f = type(k) == "string" and k or (type(v) == "string" and v)
-            if f and type(f) == "string" then
-                local name = f:match("^cfg_(.+)%.json$")
-                if name and name ~= "" and name ~= "settings" and not seen[name] then seen[name] = true table.insert(list, name) end
-            end
-        end
-    end
-    table.sort(list)
-    return list
-end
-
 local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
-    Settings:Section({Title = "Privacy", Side = "Right"})
-    Settings:Toggle({
-        Title = "Hide Username",
-        Desc = "",
-        Value = Globals.HideUsername,
-        Callback = function(v)
-            SetSetting("HideUsername", v)
-            UpdatePrivacyState()
-        end
-    })
-
-    Settings:Textbox({
-        Title = "Streamer Name",
-        Desc = "",
-        Placeholder = "Spoof Name",
-        Value = Globals.StreamerName or "",
-        ClearTextOnFocus = false,
-        Callback = function(value)
-            SetSetting("StreamerName", value or "")
-            UpdatePrivacyState()
-        end
-    })
-
-    Settings:Toggle({
-        Title = "Streamer Mode",
-        Desc = "",
-        Value = Globals.StreamerMode,
-        Callback = function(v)
-            SetSetting("StreamerMode", v)
-            UpdatePrivacyState()
-        end
-    })
-
-    Settings:Section({Title = "Tags", Side = "Right"})
-    local tagOptions = collectTagOptions()
-    local tagValue = Globals.tagName or "None"
-    if not table.find(tagOptions, tagValue) then
-        tagValue = "None"
-    end
-    Settings:Dropdown({
-        Title = "Tag Changer",
-        Desc = "",
-        List = tagOptions,
-        Value = tagValue,
-        Callback = function(choice)
-            local selected = choice
-            if type(choice) == "table" then
-                selected = choice[1]
-            end
-            if not selected or selected == "" then
-                selected = "None"
-            end
-            SetSetting("tagName", selected)
-            if selected == "None" then
-                stopTagChanger()
-            else
-                startTagChanger()
-            end
-        end
-    })
-
-    local configListFrame = Instance.new("Frame")
-    configListFrame.Name = "ConfigsListArea"
-    configListFrame.Size = UDim2.new(1, 0, 0, 80)
-    configListFrame.BackgroundColor3 = library.theme.Element
-    configListFrame.BorderSizePixel = 0
-    configListFrame.LayoutOrder = 0
-    local configListStroke = Instance.new("UIStroke")
-    configListStroke.Color = library.theme.Border
-    configListStroke.Thickness = 1
-    configListStroke.Parent = configListFrame
-    local configScroll = Instance.new("ScrollingFrame")
-    configScroll.Name = "ConfigsScroll"
-    configScroll.Size = UDim2.new(1, -8, 1, -4)
-    configScroll.Position = UDim2.new(0, 4, 0, 2)
-    configScroll.BackgroundTransparency = 1
-    configScroll.BorderSizePixel = 0
-    configScroll.ScrollBarThickness = 4
-    configScroll.ScrollBarImageColor3 = library.theme.Accent
-    configScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    configScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    configScroll.Parent = configListFrame
-    local configInner = Instance.new("Frame")
-    configInner.Size = UDim2.new(1, 0, 0, 0)
-    configInner.BackgroundTransparency = 1
-    configInner.AutomaticSize = Enum.AutomaticSize.Y
-    configInner.Parent = configScroll
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 2)
-    listLayout.Parent = configInner
-    local knownConfigNames = {}
-    local selectedConfigName = nil
-    local function setConfigNameInBox(name)
-        local box = (type(configNameBox) == "table" and configNameBox.box) or configNameBox
-        if box then box.Text = tostring(name or "") end
-    end
-    local function updateConfigListSelectionColors()
-        local accent = library.theme.Accent
-        local textColor = library.theme.Text
-        for _, c in ipairs(configInner:GetChildren()) do
-            if c:IsA("TextButton") and c.Name == "ConfigItem" then
-                c.TextColor3 = (c.Text == selectedConfigName) and accent or textColor
-            end
-        end
-    end
-    local function refreshConfigList(ensureName)
-        for _, c in ipairs(configInner:GetChildren()) do
-            if c:IsA("TextButton") and c.Name == "ConfigItem" then c:Destroy() end
-        end
-        local names = listConfigNames()
-        if ensureName and type(ensureName) == "string" and ensureName ~= "" then
-            knownConfigNames[ensureName] = true
-        end
-        for name, _ in pairs(knownConfigNames) do
-            if not table.find(names, name) then table.insert(names, name) end
-        end
-        table.sort(names)
-        for i, name in ipairs(names) do
-            knownConfigNames[name] = true
-            local btn = Instance.new("TextButton")
-            btn.Name = "ConfigItem"
-            btn.Text = name
-            btn.Size = UDim2.new(1, -4, 0, 14)
-            btn.LayoutOrder = i
-            btn.BackgroundTransparency = 1
-            btn.BorderSizePixel = 0
-            btn.TextColor3 = (name == selectedConfigName) and library.theme.Accent or library.theme.Text
-            btn.TextSize = library.font_size or 12
-            btn.TextXAlignment = Enum.TextXAlignment.Center
-            btn.AutoButtonColor = false
-            if library.font_face then pcall(function() btn.FontFace = library.font_face end) end
-            btn.MouseButton1Click:Connect(function()
-                selectedConfigName = name
-                setConfigNameInBox(name)
-                updateConfigListSelectionColors()
-            end)
-            btn.Parent = configInner
-        end
-    end
-
-    local cfgSec = Settings:Section({Title = "Configs", Side = "Left"})
-    if cfgSec and cfgSec.objects and cfgSec.objects.content then
-        configListFrame.Parent = cfgSec.objects.content
-        refreshConfigList()
-    end
-    Settings:Label({Title = "Config Name"})
-    local configNameBox = Settings:Textbox({
-        Title = "Config Name",
-        Placeholder = "Config name",
-        Value = "",
-        ClearTextOnFocus = false,
-        Callback = function() end
-    })
-    local configNameInput = (type(configNameBox) == "table" and configNameBox.box) or configNameBox
-    local function getConfigName()
-        local b = (type(configNameBox) == "table" and configNameBox.box) or configNameBox
-        return (b and b.Text and b.Text:gsub("^%s*(.-)%s*$", "%1")) or ""
-    end
-    Settings:Button({
-        Title = "Create",
-        Callback = function()
-            local name = getConfigName()
-            if name == "" then Window:Notify({Title = "Configs", Desc = "Enter a config name", Time = 2, Type = "error"}) return end
-            local baseName = sanitizeConfigName(name)
-            if baseName == "" then Window:Notify({Title = "Configs", Desc = "Enter a valid config name", Time = 2, Type = "error"}) return end
-            if not writefile then Window:Notify({Title = "Configs", Desc = "Create not supported (no writefile)", Time = 3, Type = "error"}) return end
-            local path = getConfigPath(baseName)
-            if not path then return end
-            local finalName = baseName
-            if isfile and path then
-                if isfile(path) then
-                    for i = 2, 999 do
-                        finalName = baseName .. "_" .. tostring(i)
-                        path = getConfigPath(finalName)
-                        if not path or not isfile(path) then break end
-                    end
-                end
-            end
-            if not ensureTDSFolder() then Window:Notify({Title = "Configs", Desc = "Could not create folder", Time = 2, Type = "error"}) return end
-            local data = {}
-            for key, _ in pairs(DefaultSettings) do data[key] = Globals[key] end
-            local jsonStr = HttpService:JSONEncode(data)
-            local ok, err = pcall(writefile, path, jsonStr)
-            if not ok then
-                Window:Notify({Title = "Configs", Desc = "Create failed: " .. tostring(err), Time = 3, Type = "error"})
-                return
-            end
-            Window:Notify({Title = "Configs", Desc = "Created: " .. finalName, Time = 2, Type = "normal"})
-            refreshConfigList(finalName)
-            task.defer(function()
-                task.wait(0)
-                refreshConfigList(finalName)
-            end)
-            local box = (type(configNameBox) == "table" and configNameBox.box) or configNameBox
-            if box and box.Text then box.Text = "" end
-        end
-    })
-    Settings:Button({
-        Title = "Delete",
-        Callback = function()
-            local name = getConfigName()
-            if name == "" then Window:Notify({Title = "Configs", Desc = "Enter or select a config name", Time = 2, Type = "error"}) return end
-            local safeName = sanitizeConfigName(name)
-            if safeName == "" then return end
-            local path = getConfigPath(safeName)
-            if not path or not delfile then
-                if not delfile then Window:Notify({Title = "Configs", Desc = "Delete not supported", Time = 2, Type = "error"}) end
-                return
-            end
-            local exists = false
-            if isfile then exists = isfile(path) else local ok = pcall(readfile, path); exists = ok end
-            if not exists then
-                Window:Notify({Title = "Configs", Desc = "Config not found: " .. safeName, Time = 2, Type = "error"})
-                return
-            end
-            local ok, err = pcall(delfile, path)
-            if not ok then
-                Window:Notify({Title = "Configs", Desc = "Delete failed: " .. tostring(err), Time = 2, Type = "error"})
-                return
-            end
-            knownConfigNames[safeName] = nil
-            if selectedConfigName == safeName then selectedConfigName = nil setConfigNameInBox("") end
-            Window:Notify({Title = "Configs", Desc = "Deleted: " .. safeName, Time = 2, Type = "normal"})
-            refreshConfigList()
-        end
-    })
-    Settings:Button({
-        Title = "Load",
-        Callback = function()
-            local name = getConfigName()
-            if name == "" then Window:Notify({Title = "Configs", Desc = "Enter or select a config name", Time = 2, Type = "error"}) return end
-            local safeName = sanitizeConfigName(name)
-            if safeName == "" then Window:Notify({Title = "Configs", Desc = "Invalid config name", Time = 2, Type = "error"}) return end
-            if not readfile then Window:Notify({Title = "Configs", Desc = "Load not supported (no readfile)", Time = 3, Type = "error"}) return end
-            local path = getConfigPath(safeName)
-            if not path then return end
-            local okRead, raw = pcall(readfile, path)
-            if not okRead or not raw then
-                Window:Notify({Title = "Configs", Desc = "Config not found or unreadable: " .. safeName, Time = 2, Type = "error"})
-                return
-            end
-            local success, data = pcall(function() return HttpService:JSONDecode(raw) end)
-            if not success or type(data) ~= "table" then Window:Notify({Title = "Configs", Desc = "Invalid config file", Time = 2, Type = "error"}) return end
-            for key, defaultVal in pairs(DefaultSettings) do
-                if data[key] ~= nil then Globals[key] = data[key] else Globals[key] = defaultVal end
-            end
-            SaveSettings()
-            Apply3dRendering()
-            UpdatePrivacyState()
-            if Globals.tagName and Globals.tagName ~= "" and Globals.tagName ~= "None" then startTagChanger() else stopTagChanger() end
-            pcall(ApplyGatlingHook)
-            Window:Notify({Title = "Configs", Desc = "Loaded: " .. safeName, Time = 2, Type = "normal"})
-        end
-    })
-    Settings:Button({
-        Title = "Save",
-        Callback = function()
-            local name = getConfigName()
-            if name == "" then Window:Notify({Title = "Configs", Desc = "Enter or select a config name", Time = 2, Type = "error"}) return end
-            local safeName = sanitizeConfigName(name)
-            if safeName == "" then Window:Notify({Title = "Configs", Desc = "Invalid config name", Time = 2, Type = "error"}) return end
-            if not writefile then Window:Notify({Title = "Configs", Desc = "Save not supported (no writefile)", Time = 3, Type = "error"}) return end
-            local path = getConfigPath(safeName)
-            if not path then return end
-            if not ensureTDSFolder() then Window:Notify({Title = "Configs", Desc = "Could not create folder", Time = 2, Type = "error"}) return end
-            local data = {}
-            for key, _ in pairs(DefaultSettings) do data[key] = Globals[key] end
-            local jsonStr = HttpService:JSONEncode(data)
-            local ok, err = pcall(writefile, path, jsonStr)
-            if not ok then
-                Window:Notify({Title = "Configs", Desc = "Save failed: " .. tostring(err), Time = 3, Type = "error"})
-                return
-            end
-            Window:Notify({Title = "Configs", Desc = "Saved: " .. safeName, Time = 2, Type = "normal"})
-            refreshConfigList(safeName)
-            task.defer(function() refreshConfigList(safeName) end)
-        end
-    })
-    Settings:Button({
-        Title = "Refresh configs",
-        Callback = function()
-            refreshConfigList()
-            Window:Notify({Title = "Configs", Desc = "List refreshed", Time = 1, Type = "normal"})
-        end
-    })
-    if cfgSec and cfgSec.objects and cfgSec.objects.content then
+    local uiSec = Settings:Section({Title = "UI Toggle", Side = "Left"})
+    if uiSec and uiSec.objects and uiSec.objects.content then
         local keyStr = (type(Globals.MenuToggleKey) == "string" and Globals.MenuToggleKey ~= "") and Globals.MenuToggleKey or "RightShift"
-        addKeybindRow(cfgSec.objects.content, "Bind", keyStr, function() end)
+        addKeybindRow(uiSec.objects.content, "Bind", keyStr, function() end)
     end
-
 end
 
 -- Stack tower: noclip through objects, but snap to ground (don't go through floor)
@@ -7026,44 +6975,39 @@ local function StartBackToLobby()
     end)
 end
 
-local function StartAntiLag()
-    if AntiLagRunning then return end
-    AntiLagRunning = true
+-- Anti-Lag from antilag.lua: optimize/revert graphics and particles (enable/disable via toggle)
+local AntiLagApplied = false
 
-    local settings = settings().Rendering
-    local OriginalQuality = settings.QualityLevel
-    settings.QualityLevel = Enum.QualityLevel.Level01
-
-    task.spawn(function()
-        while Globals.AntiLag do
-            local TowersFolder = workspace:FindFirstChild("Towers")
-            local ClientUnits = workspace:FindFirstChild("ClientUnits")
-            local enemies = workspace:FindFirstChild("NPCs")
-
-            if TowersFolder then
-                for _, tower in ipairs(TowersFolder:GetChildren()) do
-                    local anims = tower:FindFirstChild("Animations")
-                    local weapon = tower:FindFirstChild("Weapon")
-                    local projectiles = tower:FindFirstChild("Projectiles")
-                    
-                    if anims then anims:Destroy() end
-                    if projectiles then projectiles:Destroy() end
-                    if weapon then weapon:Destroy() end
-                end
+local function ApplyAntiLag()
+    if AntiLagApplied then return end
+    AntiLagApplied = true
+    pcall(function()
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        game.Lighting.GlobalShadows = false
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                v.Enabled = false
             end
-            if ClientUnits then
-                for _, unit in ipairs(ClientUnits:GetChildren()) do
-                    unit:Destroy()
-                end
-            end
-            if enemies then
-                for _, npc in ipairs(enemies:GetChildren()) do
-                    npc:Destroy()
-                end
-            end
-            task.wait(0.5)
         end
-        AntiLagRunning = false
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("BasePart") and v.Material == Enum.Material.Grass then
+                v.Material = Enum.Material.SmoothPlastic
+            end
+        end
+    end)
+end
+
+local function RemoveAntiLag()
+    if not AntiLagApplied then return end
+    AntiLagApplied = false
+    pcall(function()
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        game.Lighting.GlobalShadows = true
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                v.Enabled = true
+            end
+        end
     end)
 end
 
@@ -7473,8 +7417,10 @@ task.spawn(function()
             StartSellFarm()
         end
         
-        if Globals.AntiLag and not AntiLagRunning then
-            StartAntiLag()
+        if Globals.AntiLag and not AntiLagApplied then
+            ApplyAntiLag()
+        elseif not Globals.AntiLag and AntiLagApplied then
+            RemoveAntiLag()
         end
 
         if Globals.AutoRejoin and not BackToLobbyRunning then
