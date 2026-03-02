@@ -1,6 +1,5 @@
 --- -- - h-hell ohel heoo hl    
--- made b y samet
--- idk date 2024 somethnimng ol
+-- made b y Microphone
 
 local library = {
     theme = {
@@ -400,6 +399,11 @@ do
             end;
 
             utility.connect(objects["TextButton"].MouseButton1Down, function()
+                for other, _ in pairs(library.open_dropdowns or {}) do
+                    if other and other.set_open then
+                        other:set_open(false);
+                    end;
+                end;
                 for _, new_tab in table_to_stack do
                     new_tab:switch(new_tab == tab);
                 end;
@@ -4345,65 +4349,6 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
         end
     })
 
-    -- Equipper (from TDS.lua)
-    Main:Section({Title = "Equipper", Side = "Left"})
-    local EquipperTowerList = {
-        "Accelerator", "Ace Pilot", "Archer", "Assassin", "Biologist", "Brawler", "Commander", "Commando",
-        "Cowboy", "Crook Boss", "Cryomancer", "DJ Booth", "Demoman", "Electroshocker", "Elementalist", "Elf Camp",
-        "Engineer", "Executioner", "Farm", "Firework Technician", "Freezer", "Frost Blaster", "Gatling Gun", "Gladiator",
-        "Hacker", "Hallow Punk", "Harvester", "Hunter", "Jester", "Mecha Base", "Medic", "Mercenary Base", "Militant",
-        "Military Base", "Minigunner", "Mortar", "Necromancer", "Paintballer", "Pursuit", "Pyromancer", "Ranger",
-        "Rocketeer", "Scout", "Shotgunner", "Slasher", "Sledger", "Sniper", "Snowballer", "Soldier",
-        "Spotlight Tech", "Swarmer", "Tesla", "Toxic Gunner", "Trapper", "Turret", "War Machine", "Warden", "Warlock"
-    }
-    Main:Dropdown({
-        Title = "Equip:",
-        Desc = "Select towers to equip (multi-select). Must be in a game.",
-        List = EquipperTowerList,
-        Value = {},
-        Multi = true,
-        Callback = function(choice)
-            local list = type(choice) == "table" and choice or { choice }
-            if #list == 0 then return end
-            local limited = {}
-            for i = 1, math.min(5, #list) do
-                limited[i] = list[i]
-            end
-            list = limited
-            task.spawn(function()
-                local inGame = PlayerGui:FindFirstChild("ReactUniversalHotbar") ~= nil
-                if not inGame then
-                    Window:Notify({
-                        Title = "Equipper",
-                        Desc = "Start or join a game first, then select towers.",
-                        Time = 4,
-                        Type = "normal"
-                    })
-                    return
-                end
-                local ok, err = pcall(function()
-                    TDS:Loadout(unpack(list))
-                end)
-                if ok then
-                    Window:Notify({
-                        Title = "Equipper",
-                        Desc = "Equipped: " .. table.concat(list, ", "),
-                        Time = 3,
-                        Type = "normal"
-                    })
-                else
-                    local msg = tostring(err):match("Equip failed for.+$") or tostring(err)
-                    Window:Notify({
-                        Title = "Equipper",
-                        Desc = "Equip failed: " .. msg,
-                        Time = 5,
-                        Type = "error"
-                    })
-                end
-            end)
-        end
-    })
-
     Main:Section({Title = "Gatling Gun", Side = "Left"})
     local gatlingSubRow
     Main:Toggle({
@@ -4951,6 +4896,67 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
     end)
 end
 
+    -- Equipper (under Stats/Misc multisection, right side)
+    Main:Section({Title = "Equipper", Side = "Right"})
+    local EquipperTowerList = {
+        "Accelerator", "Ace Pilot", "Archer", "Assassin", "Biologist", "Brawler", "Commander", "Commando",
+        "Cowboy", "Crook Boss", "Cryomancer", "DJ Booth", "Demoman", "Electroshocker", "Elementalist", "Elf Camp",
+        "Engineer", "Executioner", "Farm", "Firework Technician", "Freezer", "Frost Blaster", "Gatling Gun", "Gladiator",
+        "Hacker", "Hallow Punk", "Harvester", "Hunter", "Jester", "Mecha Base", "Medic", "Mercenary Base", "Militant",
+        "Military Base", "Minigunner", "Mortar", "Necromancer", "Paintballer", "Pursuit", "Pyromancer", "Ranger",
+        "Rocketeer", "Scout", "Shotgunner", "Slasher", "Sledger", "Sniper", "Snowballer", "Soldier",
+        "Spotlight Tech", "Swarmer", "Tesla", "Toxic Gunner", "Trapper", "Turret", "War Machine", "Warden", "Warlock"
+    }
+    Main:Dropdown({
+        Title = "Equip:",
+        Desc = "Select towers to equip (multi-select). Must be in a game.",
+        List = EquipperTowerList,
+        Value = {},
+        Multi = true,
+        Callback = function(choice)
+            local list = type(choice) == "table" and choice or { choice }
+            if #list == 0 then return end
+            local limited = {}
+            for i = 1, math.min(5, #list) do
+                limited[i] = list[i]
+            end
+            list = limited
+            task.spawn(function()
+                local inGame = PlayerGui:FindFirstChild("ReactUniversalHotbar") ~= nil
+                if not inGame then
+                    Window:Notify({
+                        Title = "Equipper",
+                        Desc = "Start or join a game first, then select towers.",
+                        Time = 4,
+                        Type = "normal"
+                    })
+                    return
+                end
+                local ok, err = pcall(function()
+                    TDS:Loadout(unpack(list))
+                end)
+                if ok then
+                    Window:Notify({
+                        Title = "Equipper",
+                        Desc = "Equipped: " .. table.concat(list, ", "),
+                        Time = 3,
+                        Type = "normal"
+                    })
+                else
+                    local msg = tostring(err):match("Equip failed for.+$") or tostring(err)
+                    Window:Notify({
+                        Title = "Equipper",
+                        Desc = "Equip failed: " .. msg,
+                        Time = 5,
+                        Type = "error"
+                    })
+                end
+            end)
+        end
+    })
+
+end
+
 Window:Line()
 
 local Strategies = Window:Tab({Title = "Strategies", Icon = "newspaper"}) do
@@ -4999,7 +5005,7 @@ local Strategies = Window:Tab({Title = "Strategies", Icon = "newspaper"}) do
         Multi = true,
         Callback = function(choice) SetSetting("Modifiers", choice) end
     })
-    Strategies:Section({Title = "Farm", Side = "Left"})
+    Strategies:Section({Title = "Farm", Side = "Right"})
     Strategies:Toggle({
         Title = "Sell Farms",
         Desc = "Sells all your farms on the specified wave",
@@ -5018,7 +5024,7 @@ local Strategies = Window:Tab({Title = "Strategies", Icon = "newspaper"}) do
             else Window:Notify({ Title = "ADS", Desc = "Invalid number entered!", Time = 3, Type = "error" }) end
         end
     })
-    Strategies:Section({Title = "Abilities", Side = "Left"})
+    Strategies:Section({Title = "Abilities", Side = "Right"})
     Strategies:Toggle({
         Title = "Enable Path Distance Marker",
         Desc = "Red = Mercenary Base, Green = Military Base",
@@ -5064,89 +5070,37 @@ end
 
 Window:Line()
 
--- // Strategy Logger (same as TDS.lua): dedicated tab for strategy log output
+-- // Recorder tab: left = Recorder (place/upgrade/sell), right = >.< (strategy log: map, equipped, etc.)
 local Logger
 do
-    local LoggerTab = Window:Tab({Title = "Logger", Icon = "notebook-pen"})
-    Logger = LoggerTab:CreateLogger({
-        Title = "STRATEGY LOGGER:",
-        Size = UDim2.new(0, 330, 0, 300)
-    })
-end
-
--- Log map and equipped troops to Logger when in game (for autostrat)
-task.defer(function()
-    if not Logger or type(Logger.Log) ~= "function" then return end
-    local function tryLogMapAndEquipped()
-        if not PlayerGui:FindFirstChild("ReactUniversalHotbar") then return false end
-        local State = ReplicatedStorage:FindFirstChild("State")
-        local mapName = "?"
-        local difficulty = "?"
-        if State then
-            pcall(function() mapName = State.Map and State.Map.Value or mapName end)
-            pcall(function() difficulty = State.Difficulty and State.Difficulty.Value or difficulty end)
-        end
-        local equipped = GetEquippedTowers()
-        local equippedStr = type(equipped) == "table" and table.concat(equipped, ", ") or tostring(equipped)
-        Logger:Log("Map: " .. tostring(mapName))
-        Logger:Log("Difficulty: " .. tostring(difficulty))
-        Logger:Log("Equipped: " .. equippedStr)
-        return true
-    end
-    for _ = 1, 60 do
-        if tryLogMapAndEquipped() then break end
-        task.wait(1)
-    end
-end)
-
-Window:Line()
-
--- // Embedded Recorder: records Place/Upgrade/Sell, saves Strat.txt on STOP; microphone logger on right
-do
     local RecorderTab = Window:Tab({Title = "Recorder", Icon = "camera"})
-    -- Create right-side print logger; Logger tab above is for strategy
-    local MicrophoneLogger = RecorderTab:CreateLogger({Title = ">.<", Size = UDim2.new(0, 330, 0, 300), Side = "Right"})
+    Logger = RecorderTab:CreateLogger({Title = ">.<", Size = UDim2.new(0, 330, 0, 300), Side = "Right"})
     local Recorder = RecorderTab:CreateLogger({Title = "Recorder", Size = UDim2.new(0, 330, 0, 230), Side = "Left"})
-    -- Redirect print() to >.< logger; skip Recorder messages, gatling messages, and errors
-    do
-        local logTarget = MicrophoneLogger
-        local logPrefix = ">.< "
-        local function isRecorderMessage(msg)
-            if type(msg) ~= "string" or msg == "" then return false end
-            local s = msg:gsub("^%s+", ""):lower()
-            if s:find("gatling") then return true end
-            if s:find("^recorder started") or s:find("^placed ") or s:find("^upgraded #") or s:find("^sold #") then return true end
-            if s:find("strategy saved") or s:find("tds/strats") or s:find("recording%.") then return true end
-            if s:find("log cleared") then return true end
-            return false
-        end
-        local function shouldSkipErrorOrWarning(msgType)
-            return msgType == Enum.MessageType.MessageError or msgType == Enum.MessageType.MessageWarning
-        end
-        local function logPrint(...)
-            if not logTarget or not logTarget.Log then return end
-            local n = select("#", ...)
-            if n == 0 then
-                pcall(logTarget.Log, logTarget, logPrefix)
-                return
+
+    -- Log map and equipped troops to >.< when in game
+    task.defer(function()
+        if not Logger or type(Logger.Log) ~= "function" then return end
+        local function tryLogMapAndEquipped()
+            if not PlayerGui:FindFirstChild("ReactUniversalHotbar") then return false end
+            local State = ReplicatedStorage:FindFirstChild("State")
+            local mapName = "?"
+            local difficulty = "?"
+            if State then
+                pcall(function() mapName = State.Map and State.Map.Value or mapName end)
+                pcall(function() difficulty = State.Difficulty and State.Difficulty.Value or difficulty end)
             end
-            local parts = {}
-            for i = 1, n do parts[i] = tostring(select(i, ...)) end
-            local str = table.concat(parts, "\t")
-            if isRecorderMessage(str) then return end
-            pcall(logTarget.Log, logTarget, logPrefix .. str)
+            local equipped = GetEquippedTowers()
+            local equippedStr = type(equipped) == "table" and table.concat(equipped, ", ") or tostring(equipped)
+            Logger:Log("Map: " .. tostring(mapName))
+            Logger:Log("Difficulty: " .. tostring(difficulty))
+            Logger:Log("Equipped: " .. equippedStr)
+            return true
         end
-        print = logPrint
-        _G.print = logPrint
-        local LogService = game:GetService("LogService")
-        if LogService and LogService.MessageOut then
-            LogService.MessageOut:Connect(function(msg, msgType, _source)
-                if shouldSkipErrorOrWarning(msgType) then return end
-                if isRecorderMessage(tostring(msg or "")) then return end
-                if logTarget and logTarget.Log then pcall(logTarget.Log, logTarget, logPrefix .. tostring(msg or "")) end
-            end)
+        for _ = 1, 60 do
+            if tryLogMapAndEquipped() then break end
+            task.wait(1)
         end
-    end
+    end)
     local record_strat = false
     local recorded_lines = {}
     local header = ""
