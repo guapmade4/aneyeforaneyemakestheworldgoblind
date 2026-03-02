@@ -1,3 +1,52 @@
+-- Outro: show first on execute (fade in image + sound, then fade out)
+do
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("Sound") then obj:Stop() obj:Destroy() end
+        end
+        task.wait(0.05)
+        local Sound = Instance.new("Sound")
+        Sound.SoundId = "http://www.roblox.com/asset/?id=119611082558157"
+        Sound.Volume = 0
+        Sound.Parent = game.Workspace
+        Sound:play()
+        local Image = Drawing.new("Image")
+        Image.Visible = false
+        Image.Transparency = 1
+        local Screen = workspace.CurrentCamera.ViewportSize
+        local maxW, maxH = Screen.X * 0.38, Screen.Y * 0.38
+        local imgW = math.min(Screen.X, maxW)
+        local imgH = math.min(Screen.Y, maxH)
+        Image.Size = Vector2.new(imgW, imgH)
+        Image.Position = Vector2.new(Screen.X / 2 - imgW / 2, Screen.Y / 2 - imgH / 2)
+        Image.Data = game:HttpGet("https://cdn.discordapp.com/attachments/1385789175479013549/1477958657064046665/copilot_image_1770922148774-Photoroom.png?ex=69a6a7c2&is=69a55642&hm=682cf0400f4c4d29d5bd3b4cc93c9ddf5fc792abfbcb6a6d904425eb3bf049ca&")
+        Image.Visible = false
+        Image.Transparency = 1
+        task.wait(0.2)
+        local steps, stepTime = 50, 0.015
+        for i = 1, steps do
+            local t = i / steps
+            Image.Transparency = t
+            if i == 1 then Image.Visible = true end
+            Sound.Volume = t * 5
+            task.wait(stepTime)
+        end
+        Image.Transparency = 1
+        Sound.Volume = 5
+        task.wait(1)
+        for i = 1, steps do
+            local t = i / steps
+            Image.Transparency = 1 - t
+            Sound.Volume = (1 - t) * 5
+            task.wait(stepTime)
+        end
+        Sound.Volume = 0
+        Sound:Stop()
+        Sound:Destroy()
+        Image:Remove()
+    end)
+end
+
 local library = {
     theme = {
         ["Accent"] = Color3.fromRGB(53, 60, 108),
