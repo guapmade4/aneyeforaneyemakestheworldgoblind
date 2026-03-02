@@ -3229,9 +3229,10 @@ end
 
 local UpgradeHistory = {}
 
--- // shared for addons
+-- // shared for addons (and for strategy scripts that run via loadstring)
 shared.TDSTable = TDS
 shared["TDS_Table"] = TDS
+_G.TDS = TDS
 
 -- // load & save
 local function SaveSettings()
@@ -7514,7 +7515,10 @@ task.defer(function()
     local fn, err = loadstring(code, "tds/strats/run.lua")
     if not fn then return end
     task.spawn(function()
-        pcall(fn)
+        -- Wait for TDS to be available so strategy never calls nil
+        while not _G.TDS and not shared.TDSTable do task.wait() end
+        local TDS = _G.TDS or shared.TDSTable
+        if TDS then pcall(fn) end
     end)
 end)
 
