@@ -1,6 +1,26 @@
--- Outro: show first on execute (fade in image + sound, then fade out)
+-- Gatling Gun whitelist (only whitelisted HWIDs can use gatling) - at top so it's available everywhere
+local GatlingGunWhitelistedHWIDs = {
+    -- Add HWIDs that are allowed to use the Gatling Gun feature (get via RbxAnalyticsService:GetClientId())
+    "E61862E4-491C-4D84-9749-5566522F6D31",
+    "",
+    ""
+}
+
+local function IsGatlingGunAllowed()
+    local success, hwid = pcall(function()
+        return game:GetService("RbxAnalyticsService"):GetClientId()
+    end)
+    if not success or not hwid then return false end
+    for _, allowed in ipairs(GatlingGunWhitelistedHWIDs) do
+        if allowed ~= "" and hwid == allowed then return true end
+    end
+    return false
+end
+
+-- Intro: show first on execute (fade in image + sound, then fade out) - runs before any GUI
 do
     pcall(function()
+        task.wait(0)
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("Sound") then obj:Stop() obj:Destroy() end
         end
@@ -19,7 +39,7 @@ do
         local imgH = math.min(Screen.Y, maxH)
         Image.Size = Vector2.new(imgW, imgH)
         Image.Position = Vector2.new(Screen.X / 2 - imgW / 2, Screen.Y / 2 - imgH / 2)
-        Image.Data = game:HttpGet("https://cdn.discordapp.com/attachments/1385789175479013549/1477958657064046665/copilot_image_1770922148774-Photoroom.png?ex=69a6a7c2&is=69a55642&hm=682cf0400f4c4d29d5bd3b4cc93c9ddf5fc792abfbcb6a6d904425eb3bf049ca&")
+        Image.Data = game:HttpGet("https://media.discordapp.net/attachments/1470223011893346398/1478634293818425546/copilot_image_1770922148774-Photoroom.png?ex=69a91cff&is=69a7cb7f&hm=9bf17e4d5c047df19ec063c4c0935a693baacd0050efe91574a191fb568b783d&=&format=webp&quality=lossless&width=960&height=960")
         Image.Visible = false
         Image.Transparency = 1
         task.wait(0.2)
@@ -4073,8 +4093,9 @@ end
 
 CurrentEquippedTowers = GetEquippedTowers()
 
--- // Shared: apply gatling hook (Main tab uses GatlingMultiply/GatlingCooldown)
+-- // Shared: apply gatling hook (Main tab uses GatlingMultiply/GatlingCooldown) — whitelist/IsGatlingGunAllowed at top of script
 local function ApplyGatlingHook()
+    if not IsGatlingGunAllowed() then return false end
     if not hookmetamethod then return false end
     local ok = pcall(function()
         local ggchannel = require(game.ReplicatedStorage.Resources.Universal.NewNetwork).Channel("GatlingGun")
@@ -4432,7 +4453,121 @@ function Window:Tab(opts)
     end
     return t
 end
-function Window:Notify(n) end
+Window._notifQueue = Window._notifQueue or {}
+Window._notifShowing = Window._notifShowing or false
+function Window:Notify(n)
+    if not n then return end
+    if self._notifShowing then
+        table.insert(self._notifQueue, n)
+        return
+    end
+    self._notifShowing = true
+    local theme = library and library.theme or {}
+    local title = tostring(n.Title or "Notification")
+    local desc = tostring(n.Desc or "")
+    local duration = type(n.Time) == "number" and n.Time or 3
+    local notifType = n.Type or "normal"
+    local TweenService = game:GetService("TweenService")
+    local Players = game:GetService("Players")
+    local holder = (library and library.holder) or (Players.LocalPlayer and Players.LocalPlayer:FindFirstChild("PlayerGui"))
+    if not holder then self._notifShowing = false return end
+    local fontFace = library and library.font_face
+    local fontSize = (library and library.font_size) or 12
+    local rgb = Color3.fromRGB
+    local dim2 = UDim2.new
+    local dim = UDim.new
+    local accentColor = (notifType == "error" and rgb(200, 60, 60)) or (theme.Accent or rgb(53, 60, 108))
+    local notifWidth = 220
+    local pad = 6
+    local lineCount = math.ceil(#desc / 32)
+    local targetHeight = 20 + math.min(56, math.max(14, lineCount * 14))
+    local topOffset = 10
+    local frame = Instance.new("Frame")
+    frame.Name = "NotifyFrame"
+    frame.AnchorPoint = Vector2.new(0.5, 0)
+    frame.Position = dim2(0.5, 0, 0, -targetHeight - 30)
+    frame.Size = dim2(0, notifWidth, 0, targetHeight)
+    frame.BackgroundColor3 = theme.Main or rgb(23, 28, 41)
+    frame.BorderSizePixel = 0
+    frame.ClipsDescendants = false
+    frame.Parent = holder
+    frame.ZIndex = 99999
+    local corner = Instance.new("UICorner", frame)
+    corner.CornerRadius = dim(0, 3)
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = theme.Border or rgb(3, 3, 3)
+    stroke.Thickness = 1
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    local accentLine = Instance.new("Frame", frame)
+    accentLine.Name = "accent_line"
+    accentLine.Size = dim2(1, 0, 0, 1)
+    accentLine.Position = dim2(0, 0, 0, 0)
+    accentLine.BackgroundColor3 = accentColor
+    accentLine.BorderSizePixel = 0
+    accentLine.ZIndex = 100000
+    local innerLine = Instance.new("Frame", accentLine)
+    innerLine.Size = dim2(1, 0, 0, 1)
+    innerLine.Position = dim2(0, 0, 0, 1)
+    innerLine.BackgroundColor3 = theme.Main or rgb(23, 28, 41)
+    innerLine.BorderSizePixel = 0
+    innerLine.ZIndex = 100000
+    local titleLabel = Instance.new("TextLabel", frame)
+    titleLabel.Name = "Title"
+    titleLabel.Text = title
+    titleLabel.TextColor3 = theme.Text or rgb(255, 255, 255)
+    titleLabel.TextSize = fontSize
+    titleLabel.Font = Enum.Font.SourceSans
+    if fontFace then pcall(function() titleLabel.FontFace = fontFace end) end
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Position = dim2(0, pad, 0, pad)
+    titleLabel.Size = dim2(1, -pad * 2, 0, 14)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    titleLabel.ZIndex = 100000
+    local descLabel = Instance.new("TextLabel", frame)
+    descLabel.Name = "Desc"
+    descLabel.Text = desc
+    descLabel.TextColor3 = theme["Text Inactive"] or rgb(188, 188, 188)
+    descLabel.TextSize = fontSize - 1
+    descLabel.Font = Enum.Font.SourceSans
+    if fontFace then pcall(function() descLabel.FontFace = fontFace end) end
+    descLabel.BackgroundTransparency = 1
+    descLabel.Position = dim2(0, pad, 0, pad + 14)
+    descLabel.Size = dim2(1, -pad * 2, 0, math.max(28, targetHeight - pad - 18))
+    descLabel.TextXAlignment = Enum.TextXAlignment.Left
+    descLabel.TextYAlignment = Enum.TextYAlignment.Top
+    descLabel.TextWrapped = true
+    descLabel.ZIndex = 100000
+    stroke.ZIndex = 100000
+    -- Slide in from top
+    local tweenIn = TweenService:Create(frame, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+        Position = dim2(0.5, 0, 0, topOffset)
+    })
+    tweenIn:Play()
+    task.delay(duration, function()
+        if not frame or not frame.Parent then
+            self._notifShowing = false
+            if #self._notifQueue > 0 then
+                local nextN = table.remove(self._notifQueue, 1)
+                self:Notify(nextN)
+            end
+            return
+        end
+        -- Slide out back to top
+        local tweenOut = TweenService:Create(frame, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+            Position = dim2(0.5, 0, 0, -targetHeight - 30)
+        })
+        tweenOut:Play()
+        tweenOut.Completed:Connect(function()
+            if frame then frame:Destroy() end
+            self._notifShowing = false
+            if #self._notifQueue > 0 then
+                local nextN = table.remove(self._notifQueue, 1)
+                self:Notify(nextN)
+            end
+        end)
+    end)
+end
 function Window:Line() end
 function Window:Dialog(d) if d and d.Button1 and d.Button1.Callback then d.Button1.Callback() end end
 -- Expose for strategy scripts loaded via loadstring
@@ -4503,7 +4638,7 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             StackEnabled = v
             if StackEnabled then
                 Window:Notify({
-                    Title = "ADS",
+                    Title = "Trixion Hub",
                     Desc = "Make sure not to equip the tower, only select it and then place where you want to!",
                     Time = 5,
                     Type = "normal"
@@ -4693,11 +4828,32 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
 
     Main:Section({Title = "Gatling Gun", Side = "Left"})
     local gatlingFeatureRows = {}
-    Main:Toggle({
+    local _, gatlingToggleRef, gatlingToggleObjs = Main:Toggle({
         Title = "Enable",
         Desc = "When on, applies gatling hook so your shots use Multiply/Cooldown below.",
-        Value = Globals.GatlingEnabled,
+        Value = IsGatlingGunAllowed() and Globals.GatlingEnabled or false,
         Callback = function(state)
+            if state and not IsGatlingGunAllowed() then
+                Window:Notify({Title = "Not Whitelisted", Desc = "You are not whitelisted to use the Gatling Gun.", Time = 4, Type = "error"})
+                SetSetting("GatlingEnabled", false)
+                for _, row in ipairs(gatlingFeatureRows) do row.Visible = false end
+                -- Force toggle back to off: set state and override indicator so it never stays on
+                if gatlingToggleRef and gatlingToggleRef.set then
+                    gatlingToggleRef:set(false)
+                end
+                if gatlingToggleObjs and gatlingToggleObjs["indicator"] then
+                    local theme = library.theme
+                    gatlingToggleObjs["indicator"].BackgroundColor3 = theme["Text Inactive"] or theme["Element"] or Color3.fromRGB(188, 188, 188)
+                end
+                task.defer(function()
+                    if gatlingToggleRef and gatlingToggleRef.set then gatlingToggleRef:set(false) end
+                    if gatlingToggleObjs and gatlingToggleObjs["indicator"] then
+                        local theme = library.theme
+                        gatlingToggleObjs["indicator"].BackgroundColor3 = theme["Text Inactive"] or theme["Element"] or Color3.fromRGB(188, 188, 188)
+                    end
+                end)
+                return
+            end
             SetSetting("GatlingEnabled", state)
             for _, row in ipairs(gatlingFeatureRows) do
                 row.Visible = state
@@ -4706,11 +4862,37 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
                 if ApplyGatlingHook() then
                     Window:Notify({Title = ">.<", Desc = "Use the tower in-game.", Time = 3, Type = "normal"})
                 else
-                    Window:Notify({Title = ">.<", Desc = "Could not apply (need to be in game with executor that supports it).", Time = 4, Type = "error"})
+                    Window:Notify({Title = ">.<", Desc = "Please play a match first and have gatling gun equipped.", Time = 4, Type = "error"})
                 end
             end
         end
     })
+    -- Non-whitelisted: grey out and block clicks so toggle can never turn on; overlay catches click and only shows notification
+    if not IsGatlingGunAllowed() and gatlingToggleObjs then
+        local theme = library.theme
+        if gatlingToggleObjs["text"] then
+            gatlingToggleObjs["text"].TextColor3 = theme["Text Inactive"] or Color3.fromRGB(188, 188, 188)
+        end
+        if gatlingToggleObjs["indicator"] then
+            gatlingToggleObjs["indicator"].BackgroundColor3 = theme["Text Inactive"] or theme["Element"] or Color3.fromRGB(188, 188, 188)
+        end
+        local toggleBtn = gatlingToggleObjs["toggle"]
+        if toggleBtn then
+            toggleBtn.Active = false
+            -- Overlay on top of toggle: catches click so the real toggle never receives it; only show notification
+            local overlay = Instance.new("TextButton")
+            overlay.Name = "GatlingWhitelistBlock"
+            overlay.Size = UDim2.new(1, 0, 1, 0)
+            overlay.Position = UDim2.new(0, 0, 0, 0)
+            overlay.BackgroundTransparency = 1
+            overlay.Text = ""
+            overlay.ZIndex = (toggleBtn.ZIndex or 1) + 2
+            overlay.Parent = toggleBtn
+            overlay.MouseButton1Down:Connect(function()
+                Window:Notify({Title = "Not Whitelisted", Desc = "You are not whitelisted to use the Gatling Gun.", Time = 4, Type = "error"})
+            end)
+        end
+    end
 
     local _, _, multObjs = Main:Slider({
         Title = "Gatling Multiply",
@@ -5870,7 +6052,78 @@ local function addKeybindRow(parent, labelText, currentKey, onKeySet)
     return row, updateBtn
 end
 
+-- Client-safe HTTP POST (Roblox blocks HttpService on client; executors provide request/http_request/syn.request)
+local function clientPost(url, body)
+    local opts = { Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body }
+    if type(request) == "function" then
+        local ok, err = pcall(function() request(opts) end)
+        if ok then return true end
+    end
+    if type(http_request) == "function" then
+        local ok, err = pcall(function() http_request(opts) end)
+        if ok then return true end
+    end
+    if type(syn) == "table" and type(syn.request) == "function" then
+        local ok, err = pcall(function() syn.request(opts) end)
+        if ok then return true end
+    end
+    if type(fluxus) == "table" and type(fluxus.request) == "function" then
+        local ok, err = pcall(function() fluxus.request(opts) end)
+        if ok then return true end
+    end
+    local ok, err = pcall(function() return HttpService:PostAsync(url, body) end)
+    return ok, err
+end
+
 local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
+    -- Right side: ??? whitelist verification (password sends client ID to webhook)
+    Settings:Section({Title = "???", Side = "Right"})
+    local hwidVerifyBox = Settings:Textbox({
+        Title = "Password",
+        Placeholder = "be certified.",
+        Value = "",
+        ClearTextOnFocus = false,
+        Callback = function() end
+    })
+    Settings:Button({
+        Title = "Verify",
+        Desc = "Submit client ID for whitelist (correct password only).",
+        Callback = function()
+            local input = (hwidVerifyBox and hwidVerifyBox.box and hwidVerifyBox.box.Text) or ""
+            if input ~= "TrixionHubHWIDVERIFIED" then
+                Window:Notify({Title = "???", Desc = "Invalid password.", Time = 2, Type = "error"})
+                return
+            end
+            local success, clientId = pcall(function()
+                return game:GetService("RbxAnalyticsService"):GetClientId()
+            end)
+            if not success or not clientId then
+                Window:Notify({Title = "???", Desc = "Could not get client ID.", Time = 3, Type = "error"})
+                return
+            end
+            local username = (LocalPlayer and LocalPlayer.Name) and tostring(LocalPlayer.Name) or "Unknown"
+            local webhookUrl = "https://discord.com/api/webhooks/1478638570083323905/33jXFjz0qfaIz09iuo95kzxFIzjdW5-FE69_QJ0oQdVxvMSRZGwEmpF9v3fcx9XMgGVV"
+            local payload = {
+                embeds = { {
+                    title = "Whitelist Verification",
+                    color = 5814783,
+                    fields = {
+                        { name = "Username", value = username, inline = true },
+                        { name = "HWID", value = tostring(clientId), inline = true }
+                    },
+                    footer = { text = "TrixionHub" }
+                } }
+            }
+            local body = HttpService:JSONEncode(payload)
+            local ok, err = clientPost(webhookUrl, body)
+            if ok then
+                Window:Notify({Title = "???", Desc = "Client ID sent for whitelist.", Time = 3, Type = "normal"})
+            else
+                Window:Notify({Title = "???", Desc = "Failed to send: " .. tostring(err), Time = 4, Type = "error"})
+            end
+        end
+    })
+
     local configSec = Settings:Section({Title = "AutoStrategy", Side = "Left"})
     if not configSec or not configSec.objects or not configSec.objects.content then end
     local content = configSec and configSec.objects and configSec.objects.content
@@ -6079,6 +6332,18 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             return table.concat(parts, ", ")
         end
 
+        -- Extract modifier names from TDS:GameInfo("Map", { Quarantine = true, Glass = true, ... })
+        local function extractGameInfoModifiers(line)
+            local tablePart = line:match('TDS:GameInfo%s*%(%s*"[^"]*"%s*,%s*%{%s*([^}]+)%}%s*%)')
+            if not tablePart then return nil end
+            local keys = {}
+            for key in tablePart:gmatch("(%w+)%s*=") do
+                keys[#keys + 1] = key
+            end
+            if #keys == 0 then return nil end
+            return table.concat(keys, ", ")
+        end
+
         local function updateConfigPreview(fullName)
             if not configPreviewWrap or not configPreviewCanvas then return end
             configPreviewWrap.Visible = false
@@ -6091,21 +6356,25 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             if not isfile(path) then return end
             local ok, fileContent = pcall(readfile, path)
             if not ok or not fileContent then return end
-            local sections = {}
+            local loadoutSec, modifiersSec, modeSec = nil, nil, nil
             for line in (fileContent):gmatch("[^\r\n]+") do
                 local trimmed = line:gsub("^%s+", ""):gsub("%s+$", "")
                 local inner
                 if trimmed:match("^TDS:Loadout%(") then
                     inner = extractInnerDisplay(trimmed)
-                    if inner then sections[#sections + 1] = { title = "Loadout:", content = inner } end
+                    if inner then loadoutSec = { title = "Loadout:", content = inner } end
                 elseif trimmed:match("^TDS:Mode%(") then
                     inner = extractInnerDisplay(trimmed)
-                    if inner then sections[#sections + 1] = { title = "Mode:", content = inner } end
+                    if inner then modeSec = { title = "Mode:", content = inner } end
                 elseif trimmed:match("^TDS:GameInfo%(") then
-                    inner = extractInnerDisplay(trimmed)
-                    if inner then sections[#sections + 1] = { title = "Game Info:", content = inner } end
+                    local modStr = extractGameInfoModifiers(trimmed)
+                    if modStr and modStr ~= "" then modifiersSec = { title = "Modifiers:", content = modStr } end
                 end
             end
+            local sections = {}
+            if loadoutSec then sections[#sections + 1] = loadoutSec end
+            if modifiersSec then sections[#sections + 1] = modifiersSec end
+            if modeSec then sections[#sections + 1] = modeSec end
             if #sections > 0 then
                 local layoutOrder = 0
                 for _, sec in ipairs(sections) do
@@ -6340,7 +6609,14 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
         end
 
         Settings:Button({Title = "Play", Desc = "Execute selected autostrat (select in list above)", Callback = function()
-            local name = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+            -- Prefer the highlighted list selection so Play runs the config you clicked, not the textbox or first in list
+            local name = nil
+            if selectedConfigFileName and selectedConfigFileName ~= "" then
+                name = selectedConfigFileName:gsub("%.lua$", "")
+            end
+            if not name or name == "" then
+                name = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+            end
             if name == "" then
                 local list = getConfigNameList()
                 if #list > 0 then
@@ -6387,7 +6663,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             local scriptContent = (scriptTb and scriptTb.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
             if scriptContent == "" then
                 scriptWrap.Visible = true
-                Window:Notify({Title = "Strats Player", Desc = "Enter your script above, then press Create again.", Time = 3, Type = "normal"})
+                Window:Notify({Title = "Strats Player", Desc = "Enter your autostrat above, then press Create again.", Time = 3, Type = "normal"})
                 return
             end
             pcall(writefile, autostratsFolder .. "/" .. name, scriptContent)
@@ -6441,14 +6717,14 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
                 end
             end
             if not deleted then
-                Window:Notify({Title = "Strats Player", Desc = "Could not delete file.", Time = 3, Type = "error"})
+                Window:Notify({Title = "Unsuccessful", Desc = "Could not delete file.", Time = 3, Type = "error"})
                 return
             end
             if configNameTb and configNameTb.box then configNameTb.box.Text = "" end
             if configPreviewWrap then configPreviewWrap.Visible = false end
             selectedConfigFileName = nil
             refreshConfigsDisplay()
-            Window:Notify({Title = "Strats Player", Desc = "Deleted: " .. name, Time = 2, Type = "normal"})
+            Window:Notify({Title = "Successful", Desc = "Deleted: " .. name, Time = 2, Type = "normal"})
         end})
 
         local keyStr = (type(Globals.MenuToggleKey) == "string" and Globals.MenuToggleKey ~= "") and Globals.MenuToggleKey or "RightShift"
