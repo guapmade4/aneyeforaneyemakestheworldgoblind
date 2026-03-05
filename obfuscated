@@ -1,7 +1,7 @@
 -- Gatling Gun whitelist (only whitelisted HWIDs can use gatling) - at top so it's available everywhere
 local GatlingGunWhitelistedHWIDs = {
     -- Add HWIDs that are allowed to use the Gatling Gun feature (get via RbxAnalyticsService:GetClientId())
-    "E61862E4-491C-4D84-9749-5566522F6D31",
+    "E61862E4-491C-4D84-9749-5566522F6D31", -- TrixionHubHWIDVERIFIED
     "",
     ""
 }
@@ -17,9 +17,23 @@ local function IsGatlingGunAllowed()
     return false
 end
 
--- Intro: show first on execute (fade in image + sound, then fade out) - runs before any GUI
+-- On execute: create tds/images folder and add images from GitHub (guapmade4/images)
 do
     pcall(function()
+        if not isfolder("tds") then makefolder("tds") end
+        if not isfolder("tds/images") then makefolder("tds/images") end
+        local baseUrl = "https://raw.githubusercontent.com/guapmade4/images/main/"
+        writefile("tds/images/dog.png", game:HttpGet(baseUrl .. "dog.png"))
+        writefile("tds/images/TrixionHub.png", game:HttpGet(baseUrl .. "TrixionHub.png"))
+    end)
+end
+
+-- Intro: show first on execute (fade in image + sound, then fade out) - runs once only
+do
+    if _G.TDSIntroShown then else
+    pcall(function()
+        if _G.TDSIntroShown then return end
+        _G.TDSIntroShown = true
         task.wait(0)
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("Sound") then obj:Stop() obj:Destroy() end
@@ -30,41 +44,89 @@ do
         Sound.Volume = 0
         Sound.Parent = game.Workspace
         Sound:play()
-        local Image = Drawing.new("Image")
-        Image.Visible = false
-        Image.Transparency = 1
+        local imgUrl = "https://raw.githubusercontent.com/guapmade4/images/main/TrixionHub.png"
         local Screen = workspace.CurrentCamera.ViewportSize
         local maxW, maxH = Screen.X * 0.38, Screen.Y * 0.38
         local imgW = math.min(Screen.X, maxW)
         local imgH = math.min(Screen.Y, maxH)
-        Image.Size = Vector2.new(imgW, imgH)
-        Image.Position = Vector2.new(Screen.X / 2 - imgW / 2, Screen.Y / 2 - imgH / 2)
-        Image.Data = game:HttpGet("https://media.discordapp.net/attachments/1470223011893346398/1478634293818425546/copilot_image_1770922148774-Photoroom.png?ex=69a91cff&is=69a7cb7f&hm=9bf17e4d5c047df19ec063c4c0935a693baacd0050efe91574a191fb568b783d&=&format=webp&quality=lossless&width=960&height=960")
-        Image.Visible = false
-        Image.Transparency = 1
-        task.wait(0.2)
         local steps, stepTime = 50, 0.015
-        for i = 1, steps do
-            local t = i / steps
-            Image.Transparency = t
-            if i == 1 then Image.Visible = true end
-            Sound.Volume = t * 5
-            task.wait(stepTime)
+        local useDrawing = pcall(function()
+            local t = Drawing.new("Image")
+            if t then t:Remove() end
+            return true
+        end)
+        if useDrawing then
+            local Image = Drawing.new("Image")
+            Image.Visible = false
+            Image.Transparency = 1
+            Image.Size = Vector2.new(imgW, imgH)
+            Image.Position = Vector2.new(Screen.X / 2 - imgW / 2, Screen.Y / 2 - imgH / 2)
+            Image.Data = game:HttpGet(imgUrl)
+            Image.Visible = false
+            Image.Transparency = 1
+            task.wait(0.2)
+            for i = 1, steps do
+                local t = i / steps
+                Image.Transparency = 1 - t
+                if i == 1 then Image.Visible = true end
+                Sound.Volume = t * 5
+                task.wait(stepTime)
+            end
+            Image.Transparency = 0
+            Sound.Volume = 5
+            task.wait(1)
+            for i = 1, steps do
+                local t = i / steps
+                Image.Transparency = t
+                Sound.Volume = (1 - t) * 5
+                task.wait(stepTime)
+            end
+            Sound.Volume = 0
+            Sound:Stop()
+            Sound:Destroy()
+            Image:Remove()
+        else
+            -- Fallback: ScreenGui + ImageLabel (works when Drawing API is not available)
+            local gui = Instance.new("ScreenGui")
+            gui.Name = "IntroGui"
+            gui.ResetOnSpawn = false
+            gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, 0, 1, 0)
+            frame.BackgroundColor3 = Color3.new(0, 0, 0)
+            frame.BackgroundTransparency = 1
+            frame.Parent = gui
+            local Image = Instance.new("ImageLabel")
+            Image.Size = UDim2.new(0, imgW, 0, imgH)
+            Image.Position = UDim2.new(0.5, -imgW/2, 0.5, -imgH/2)
+            Image.BackgroundTransparency = 1
+            Image.Image = imgUrl
+            Image.ImageTransparency = 1
+            Image.Parent = frame
+            task.wait(0.2)
+            for i = 1, steps do
+                local t = i / steps
+                Image.ImageTransparency = 1 - t
+                Sound.Volume = t * 5
+                task.wait(stepTime)
+            end
+            Image.ImageTransparency = 0
+            Sound.Volume = 5
+            task.wait(1)
+            for i = 1, steps do
+                local t = i / steps
+                Image.ImageTransparency = t
+                Sound.Volume = (1 - t) * 5
+                task.wait(stepTime)
+            end
+            Sound.Volume = 0
+            Sound:Stop()
+            Sound:Destroy()
+            gui:Destroy()
         end
-        Image.Transparency = 1
-        Sound.Volume = 5
-        task.wait(1)
-        for i = 1, steps do
-            local t = i / steps
-            Image.Transparency = 1 - t
-            Sound.Volume = (1 - t) * 5
-            task.wait(stepTime)
-        end
-        Sound.Volume = 0
-        Sound:Stop()
-        Sound:Destroy()
-        Image:Remove()
     end)
+    end
 end
 
 local library = {
@@ -488,6 +550,10 @@ do
             end;
 
             table.insert(table_to_stack, tab);
+            -- On execute: show first tab (Main) automatically so content is not blank
+            if iswindowtab and #table_to_stack == 1 then
+                tab:switch(true);
+            end;
             return setmetatable(tab, real_table_to_stack), objects;
         end;
     end;
@@ -2788,8 +2854,28 @@ do
             title = objects["title"]
         };
 
+        -- TrixionHub image overlay: shown centered when dragging, hidden when drag stops
+        local trixion_overlay = nil;
+        pcall(function()
+            trixion_overlay = utility.new("ImageLabel", {
+                Parent = objects["Main_Frame"],
+                Name = "TrixionOverlay",
+                BackgroundTransparency = 1,
+                Visible = false,
+                AnchorPoint = vec2(0.5, 0.5),
+                Position = dim2(0.5, 0, 0.5, 0),
+                Size = dim2(0, 180, 0, 180),
+                ScaleType = Enum.ScaleType.Fit,
+                Image = getcustomasset("tds/images/dog.png")
+            });
+            if trixion_overlay then
+                trixion_overlay.ZIndex = 100;
+            end;
+        end);
+
         do -- dragging
             local gui = objects["Main_Frame"]
+            local content_frame = objects["content"]
             local drag_input, drag_start, start_position
     
             local function update(input)
@@ -2800,11 +2886,19 @@ do
             utility.connect(gui.InputBegan, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     library.dragging = true;
+                    content_frame.Visible = false;
+                    if trixion_overlay and trixion_overlay.Parent then
+                        trixion_overlay.Visible = true;
+                    end;
                     drag_start = input.Position;
                     start_position = gui.Position;
                     input.Changed:Connect(function()
                         if input.UserInputState == Enum.UserInputState.End then
                             library.dragging = false;
+                            content_frame.Visible = true;
+                            if trixion_overlay and trixion_overlay.Parent then
+                                trixion_overlay.Visible = false;
+                            end;
                         end;
                     end);
                 end;
