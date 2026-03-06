@@ -17,118 +17,6 @@ local function IsGatlingGunAllowed()
     return false
 end
 
--- On execute: create tds/images folder and add images from GitHub (guapmade4/images)
-do
-    pcall(function()
-        if not isfolder("tds") then makefolder("tds") end
-        if not isfolder("tds/images") then makefolder("tds/images") end
-        local baseUrl = "https://raw.githubusercontent.com/guapmade4/images/main/"
-        writefile("tds/images/dog.png", game:HttpGet(baseUrl .. "dog.png"))
-        writefile("tds/images/TrixionHub.png", game:HttpGet(baseUrl .. "TrixionHub.png"))
-    end)
-end
-
--- Intro: show first on execute (fade in image + sound, then fade out) - runs once only
-do
-    if _G.TDSIntroShown then else
-    pcall(function()
-        if _G.TDSIntroShown then return end
-        _G.TDSIntroShown = true
-        task.wait(0)
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Sound") then obj:Stop() obj:Destroy() end
-        end
-        task.wait(0.05)
-        local Sound = Instance.new("Sound")
-        Sound.SoundId = "http://www.roblox.com/asset/?id=119611082558157"
-        Sound.Volume = 0
-        Sound.Parent = game.Workspace
-        Sound:play()
-        local imgUrl = "https://raw.githubusercontent.com/guapmade4/images/main/TrixionHub.png"
-        local Screen = workspace.CurrentCamera.ViewportSize
-        local maxW, maxH = Screen.X * 0.38, Screen.Y * 0.38
-        local imgW = math.min(Screen.X, maxW)
-        local imgH = math.min(Screen.Y, maxH)
-        local steps, stepTime = 50, 0.015
-        local useDrawing = pcall(function()
-            local t = Drawing.new("Image")
-            if t then t:Remove() end
-            return true
-        end)
-        if useDrawing then
-            local Image = Drawing.new("Image")
-            Image.Visible = false
-            Image.Transparency = 1
-            Image.Size = Vector2.new(imgW, imgH)
-            Image.Position = Vector2.new(Screen.X / 2 - imgW / 2, Screen.Y / 2 - imgH / 2)
-            Image.Data = game:HttpGet(imgUrl)
-            Image.Visible = false
-            Image.Transparency = 1
-            task.wait(0.2)
-            for i = 1, steps do
-                local t = i / steps
-                Image.Transparency = 1 - t
-                if i == 1 then Image.Visible = true end
-                Sound.Volume = t * 5
-                task.wait(stepTime)
-            end
-            Image.Transparency = 0
-            Sound.Volume = 5
-            task.wait(1)
-            for i = 1, steps do
-                local t = i / steps
-                Image.Transparency = t
-                Sound.Volume = (1 - t) * 5
-                task.wait(stepTime)
-            end
-            Sound.Volume = 0
-            Sound:Stop()
-            Sound:Destroy()
-            Image:Remove()
-        else
-            -- Fallback: ScreenGui + ImageLabel (works when Drawing API is not available)
-            local gui = Instance.new("ScreenGui")
-            gui.Name = "IntroGui"
-            gui.ResetOnSpawn = false
-            gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-            local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(1, 0, 1, 0)
-            frame.BackgroundColor3 = Color3.new(0, 0, 0)
-            frame.BackgroundTransparency = 1
-            frame.Parent = gui
-            local Image = Instance.new("ImageLabel")
-            Image.Size = UDim2.new(0, imgW, 0, imgH)
-            Image.Position = UDim2.new(0.5, -imgW/2, 0.5, -imgH/2)
-            Image.BackgroundTransparency = 1
-            Image.Image = imgUrl
-            Image.ImageTransparency = 1
-            Image.Parent = frame
-            task.wait(0.2)
-            for i = 1, steps do
-                local t = i / steps
-                Image.ImageTransparency = 1 - t
-                Sound.Volume = t * 5
-                task.wait(stepTime)
-            end
-            Image.ImageTransparency = 0
-            Sound.Volume = 5
-            task.wait(1)
-            for i = 1, steps do
-                local t = i / steps
-                Image.ImageTransparency = t
-                Sound.Volume = (1 - t) * 5
-                task.wait(stepTime)
-            end
-            Sound.Volume = 0
-            Sound:Stop()
-            Sound:Destroy()
-            gui:Destroy()
-        end
-    end)
-    end
-end
-
 local library = {
     theme = {
         ["Accent"] = Color3.fromRGB(53, 60, 108),
@@ -148,7 +36,7 @@ local library = {
     font = "windows-xp-tahoma", -- windows-xp-tahoma, proggy-square, minecraftia, proggy-clean, proggy-tiny
     font_size = 12,
 
-    folder_name = "biggggui",
+    folder_name = "TrixionHub",
 
     flags = {};
 
@@ -191,7 +79,7 @@ do
     do
         local lib_holder = Instance.new("ScreenGui", game:GetService("CoreGui"))
         lib_holder.ZIndexBehavior = Enum.ZIndexBehavior.Global;
-        lib_holder.Name = "biggggui";
+        lib_holder.Name = "TrixionHub";
         library.holder = lib_holder;
     end;
 
@@ -207,10 +95,58 @@ do
         if not isfolder(library.folder_name .. "/fonts") then
             makefolder(library.folder_name .. "/fonts");
         end;
+
+        if not isfolder(library.folder_name .. "/audio") then
+            makefolder(library.folder_name .. "/audio");
+        end;
+
+        pcall(function()
+            if not isfolder("tds") then makefolder("tds"); end;
+            if not isfolder("tds/audio") then makefolder("tds/audio"); end;
+        end);
     end;
 
     local library_folder = library.folder_name;
     local images_folder = library_folder .. "/images";
+    local audio_folder = library_folder .. "/audio";
+    -- Copy or download images into library folder so getcustomasset works when script is run via loadstring
+    pcall(function()
+        local dogDest = images_folder .. "/dog.png";
+        if not isfile(dogDest) then
+            if isfile("tds/images/dog.png") then
+                writefile(dogDest, readfile("tds/images/dog.png"));
+            else
+                writefile(dogDest, game:HttpGet("https://raw.githubusercontent.com/guapmade4/images/main/dog.png"));
+            end;
+        end;
+    end);
+    pcall(function()
+        local imgDest = images_folder .. "/image.png";
+        if not isfile(imgDest) then
+            if isfile("tds/images/image.png") then
+                writefile(imgDest, readfile("tds/images/image.png"));
+            else
+                writefile(imgDest, game:HttpGet("https://raw.githubusercontent.com/guapmade4/images/main/image.png"));
+            end;
+        end;
+    end);
+    -- Drag sound: use GitHub file name (title) so the mp3 file matches the repo.
+    local drag_mp3_filename = "01 Doki Doki Literature Club!.mp3";
+    local drag_mp3_url = "https://raw.githubusercontent.com/guapmade4/images/main/01%20Doki%20Doki%20Literature%20Club!.mp3";
+    pcall(function()
+        local tdsDrag = "tds/audio/" .. drag_mp3_filename;
+        local dragDest = audio_folder .. "/" .. drag_mp3_filename;
+        -- 1) Ensure tds/audio has a file (download default if empty so folder isn't empty)
+        if not isfile(tdsDrag) then
+            writefile(tdsDrag, game:HttpGet(drag_mp3_url));
+        end;
+        -- 2) Copy into library so getcustomasset can load it (your tds file overwrites if you added your own mp3)
+        if isfile(tdsDrag) then
+            writefile(dragDest, readfile(tdsDrag));
+        elseif not isfile(dragDest) then
+            writefile(dragDest, game:HttpGet(drag_mp3_url));
+        end;
+    end);
     local fonts_folder = library_folder .. "/fonts";
 
     local fonts = {};
@@ -2592,7 +2528,7 @@ do
             AnchorPoint = vec2(0.5, 0.5),
             Name = "Main_Frame",
             Position = dim2(0.5, 0, 0.5, 0),
-            Size = dim2(0, 390, 0, 520),
+            Size = dim2(0, 400, 0, 480),
             BorderColor3 = rgb(0, 0, 0),
             BorderSizePixel = 0,
             BackgroundColor3 = library.theme.Main;
@@ -2647,6 +2583,16 @@ do
         objects["UIStroke9"] = utility.new("UIStroke", {
             Parent = objects["title"],
             LineJoinMode = Enum.LineJoinMode.Miter
+        })
+
+        objects["drag_handle"] = utility.new("Frame", {
+            Parent = objects["holder"],
+            Name = "DragHandle",
+            Size = dim2(1, 0, 0, 20),
+            Position = dim2(0, 0, 0, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 10
         })
         
         objects["outline"] = utility.new("Frame", {
@@ -2854,68 +2800,150 @@ do
             title = objects["title"]
         };
 
-        -- TrixionHub image overlay: shown centered when dragging, hidden when drag stops
+        -- Dragging overlay: fills whole UI when dragging (Main_Frame 400x480). Use Crop to avoid blur from Stretch; image should be at least 400x480 (or 800x960 for sharper).
         local trixion_overlay = nil;
         pcall(function()
-            trixion_overlay = utility.new("ImageLabel", {
-                Parent = objects["Main_Frame"],
-                Name = "TrixionOverlay",
-                BackgroundTransparency = 1,
-                Visible = false,
-                AnchorPoint = vec2(0.5, 0.5),
-                Position = dim2(0.5, 0, 0.5, 0),
-                Size = dim2(0, 180, 0, 180),
-                ScaleType = Enum.ScaleType.Fit,
-                Image = getcustomasset("tds/images/dog.png")
-            });
-            if trixion_overlay then
-                trixion_overlay.ZIndex = 100;
+            local imgPath = images_folder .. "/image.png";
+            local fallbackPath = "tds/images/image.png";
+            local assetId = nil;
+            pcall(function() assetId = getcustomasset(imgPath); end);
+            if not assetId or assetId == "" then
+                pcall(function() assetId = getcustomasset(fallbackPath); end);
+            end;
+            if not assetId or assetId == "" then
+                assetId = "https://raw.githubusercontent.com/guapmade4/images/main/image.png";
+            end;
+            if assetId and assetId ~= "" then
+                trixion_overlay = utility.new("ImageLabel", {
+                    Parent = objects["Main_Frame"],
+                    Name = "TrixionOverlay",
+                    BackgroundTransparency = 1,
+                    Visible = false,
+                    AnchorPoint = vec2(0, 0),
+                    Position = dim2(0, 0, 0, 0),
+                    Size = dim2(1, 0, 1, 0),
+                    ScaleType = Enum.ScaleType.Crop,
+                    Image = assetId
+                });
+                if trixion_overlay then
+                    trixion_overlay.ZIndex = 100;
+                end;
             end;
         end);
 
-        do -- dragging
+        -- Drag sound: play the GitHub drag mp3 (right song). Use same filename as repo; fallback to rbxassetid if custom fails to load.
+        local DRAG_SOUND_FALLBACK_ID = "rbxassetid://7212399604";
+        local drag_sound = nil;
+        local drag_sound_ended = false; -- true when song finished so next drag restarts from start
+        pcall(function()
+            local id = nil;
+            if type(getcustomasset) == "function" then
+                local fn = drag_mp3_filename;
+                if isfile("tds/audio/" .. fn) then
+                    pcall(function() id = getcustomasset("tds/audio/" .. fn); end);
+                end;
+                if not id or id == "" then
+                    pcall(function() id = getcustomasset(audio_folder .. "/" .. fn); end);
+                end;
+                if not id or id == "" then
+                    pcall(function() id = getcustomasset("tds/audio/" .. fn); end);
+                end;
+            end;
+            if not id or id == "" then id = DRAG_SOUND_FALLBACK_ID; end;
+            if id and id ~= "" then
+                local sound = Instance.new("Sound");
+                sound.SoundId = id;
+                sound.Volume = 0.5;
+                sound.Looped = false; -- so song can finish and we restart only when it has ended
+                sound.Parent = game:GetService("SoundService");
+                drag_sound = sound;
+                if sound.Ended then
+                    sound.Ended:Connect(function() drag_sound_ended = true; end);
+                end;
+                -- If custom URL fails to load (e.g. error 31), fall back to known-good asset so something plays.
+                task.defer(function()
+                    task.wait(0.5);
+                    if drag_sound and drag_sound.Parent and not drag_sound.IsLoaded and drag_sound.SoundId ~= DRAG_SOUND_FALLBACK_ID then
+                        drag_sound.SoundId = DRAG_SOUND_FALLBACK_ID;
+                    end;
+                end);
+            end;
+        end);
+
+        do -- dragging (with smooth lerp) - only when holding the title bar
             local gui = objects["Main_Frame"]
             local content_frame = objects["content"]
+            local drag_handle = objects["drag_handle"]
             local drag_input, drag_start, start_position
-    
-            local function update(input)
-                local delta = input.Position - drag_start;
-                gui.Position = UDim2.new(start_position.X.Scale, start_position.X.Offset + delta.X, start_position.Y.Scale, start_position.Y.Offset + delta.Y);
-            end;
+            local drag_target_x, drag_target_y
+            local drag_lerp_speed = 0.28
 
-            utility.connect(gui.InputBegan, function(input)
+            local function update(input)
+                local delta = input.Position - drag_start
+                drag_target_x = start_position.X.Offset + delta.X
+                drag_target_y = start_position.Y.Offset + delta.Y
+            end
+
+            utility.connect(run_service.RenderStepped, function()
+                if not library.dragging or drag_target_x == nil or drag_target_y == nil then return end
+                local current = gui.Position
+                local new_x = utility.lerp(current.X.Offset, drag_target_x, drag_lerp_speed)
+                local new_y = utility.lerp(current.Y.Offset, drag_target_y, drag_lerp_speed)
+                gui.Position = UDim2.new(current.X.Scale, new_x, current.Y.Scale, new_y)
+            end, "windowDragLerp")
+
+            utility.connect(drag_handle.InputBegan, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    library.dragging = true;
-                    content_frame.Visible = false;
+                    for other, _ in pairs(library.open_dropdowns or {}) do
+                        if other and other.set_open then
+                            other:set_open(false)
+                        end
+                    end
+                    library.dragging = true
+                    content_frame.Visible = false
                     if trixion_overlay and trixion_overlay.Parent then
-                        trixion_overlay.Visible = true;
-                    end;
-                    drag_start = input.Position;
-                    start_position = gui.Position;
+                        trixion_overlay.Visible = true
+                    end
+                    if drag_sound then
+                        if drag_sound_ended then
+                            drag_sound.TimePosition = 0;
+                            drag_sound:Play();
+                            drag_sound_ended = false;
+                        elseif drag_sound.IsPaused then
+                            drag_sound:Resume();
+                        else
+                            drag_sound:Play();
+                        end;
+                    end
+                    drag_start = input.Position
+                    start_position = gui.Position
+                    drag_target_x = start_position.X.Offset
+                    drag_target_y = start_position.Y.Offset
                     input.Changed:Connect(function()
                         if input.UserInputState == Enum.UserInputState.End then
-                            library.dragging = false;
-                            content_frame.Visible = true;
+                            library.dragging = false
+                            content_frame.Visible = true
                             if trixion_overlay and trixion_overlay.Parent then
-                                trixion_overlay.Visible = false;
-                            end;
-                        end;
-                    end);
-                end;
+                                trixion_overlay.Visible = false
+                            end
+                            if drag_sound then drag_sound:Pause(); end
+                        end
+                    end)
+                end
             end, "windowDragging")
-    
-            utility.connect(gui.InputChanged, function(input)
+
+            utility.connect(drag_handle.InputChanged, function(input)
                 if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                    drag_input = input;
-                end;
+                    drag_input = input
+                end
             end, "WindowInputChanged")
 
             utility.connect(user_input_service.InputChanged, function(input)
                 if input == drag_input and library.dragging then
-                    update(input);
-                end;
+                    update(input)
+                end
             end, "userinputchangedwindowdragging")
-        end;
+        end
 
         return setmetatable(window, self);
     end;
@@ -2927,7 +2955,7 @@ do
             objects = {};
         };
 
-        local _, objects = utility.new_tab(true, tab.window.objects.tabs, tab.window.objects.content, 358, 452, 0, 0, self.real_tabs, self.tabs, tab.name);
+        local _, objects = utility.new_tab(true, tab.window.objects.tabs, tab.window.objects.content, 368, 432, 0, 0, self.real_tabs, self.tabs, tab.name);
 
         tab.objects = {
             main = objects["section_holders"];
@@ -3441,7 +3469,7 @@ local DefaultSettings = {
     StreamerName = "",
     tagName = "None",
     Modifiers = {},
-    MenuToggleKey = "RightShift",
+    MenuToggleKey = "LeftShift",
     StackTowerKey = "Q",
     AutostratPlaying = false,
     AutostratPlayingConfig = ""
@@ -3578,8 +3606,8 @@ local function Apply3dRendering()
 end
 
 LoadSettings()
--- Ensure UI toggle bind is Right Shift (displayed as RS)
-Globals.MenuToggleKey = "RightShift"
+-- Ensure UI toggle bind is Left Shift
+Globals.MenuToggleKey = "LeftShift"
 SaveSettings()
 Apply3dRendering()
 
@@ -6821,7 +6849,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             Window:Notify({Title = "Successful", Desc = "Deleted: " .. name, Time = 2, Type = "normal"})
         end})
 
-        local keyStr = (type(Globals.MenuToggleKey) == "string" and Globals.MenuToggleKey ~= "") and Globals.MenuToggleKey or "RightShift"
+        local keyStr = (type(Globals.MenuToggleKey) == "string" and Globals.MenuToggleKey ~= "") and Globals.MenuToggleKey or "LeftShift"
         addKeybindRow(content, "UI Toggle Bind", keyStr, function() end)
     end
 end
