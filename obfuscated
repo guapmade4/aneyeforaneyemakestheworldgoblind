@@ -434,7 +434,13 @@ do
             function tab:switch(bool)
                 tab.active = bool;
                 objects["TabContent"].Visible = bool;
-
+                if not bool then
+                    for other, _ in pairs(library.open_dropdowns or {}) do
+                        if other and other.set_open then
+                            other:set_open(false);
+                        end;
+                    end;
+                end;
                 if bool then
                     objects["inactive"].BorderSizePixel = 0
                     if library.tweening then
@@ -3251,11 +3257,12 @@ do
         local name = Data.Name or Data.name or "Textbox";
         local default = Data.Default or Data.default or "";
         local placeholder = Data.Placeholder or Data.placeholder or "";
+        local wrapSize = Data.Size or Data.size or dim2(1, 0, 0, 20);
         -- Keybind-style wrapper: Main outer + Inline inner, rounded corners
         local wrap = utility.new("Frame", {
             Parent = self.objects.content,
             Name = name .. "_wrap",
-            Size = dim2(1, 0, 0, 20),
+            Size = wrapSize,
             BorderSizePixel = 0,
             BackgroundColor3 = library.theme.Main or Color3.fromRGB(26, 26, 26)
         });
@@ -5937,6 +5944,147 @@ end
 Window:Line()
 
 local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
+    -- Outro.lua animations logic applied in full
+    local Players = game:GetService("Players")
+    local Client = Players.LocalPlayer
+
+    local Script = {
+        Client = {
+            RootPart = nil,
+            Humanoid = nil,
+            Character = nil,
+            Tool = nil,
+        },
+        Animation = {
+            Animations = {
+                ["Floss"] = "10714340543",
+                ["Flex Walk"] = "15505459811",
+                ["HUGO Let's Drive!"] = "17360699557",
+            },
+            AnimationObject = nil,
+            Animation = nil,
+        },
+        Functions = {},
+    }
+
+    local UI = {
+        Misc = {
+            Client = {
+                Animation = {
+                    Selected = "Floss",
+                    Speed = 1,
+                },
+            },
+        },
+    }
+
+    -- Refresh Script.Client from current character (so Enable always uses latest)
+    local function refreshClient()
+        if not Client.Character then return false end
+        Script.Client.Character = Client.Character
+        Script.Client.RootPart = Client.Character:FindFirstChild("HumanoidRootPart")
+        Script.Client.Humanoid = Client.Character:FindFirstChildOfClass("Humanoid")
+        return Script.Client.Character and Script.Client.Humanoid
+    end
+
+    Script.Functions.ClientChecks = function()
+        refreshClient()
+        return Script.Client.Character and Script.Client.Humanoid
+    end
+
+    -- LoadAnimation: refresh character, validate id, then load and play
+    Script.Functions.LoadAnimation = function(AnimationId)
+        if not refreshClient() then
+            if Window and Window.Notify then
+                Window:Notify({ Title = "Animation", Desc = "No character spawned.", Time = 4, Type = "normal" })
+            end
+            return
+        end
+        local idStr = tostring(AnimationId or ""):match("%d+")
+        if not idStr or idStr == "" then
+            if Window and Window.Notify then
+                Window:Notify({ Title = "Animation", Desc = "Enter a valid numeric animation ID (e.g. 10714340543).", Time = 4, Type = "normal" })
+            end
+            return
+        end
+        -- Roblox animation IDs are typically 9–19 digits; warn if outside range but still try
+        if #idStr < 9 or #idStr > 25 then
+            if Window and Window.Notify then
+                Window:Notify({ Title = "Animation", Desc = "ID length may be invalid (use 9–19 digits). Trying anyway.", Time = 3, Type = "normal" })
+            end
+        end
+        local char = Script.Client.Character
+        local humanoid = Script.Client.Humanoid
+        -- Clear previous
+        if Script.Animation.Animation then pcall(function() Script.Animation.Animation:Stop() end) Script.Animation.Animation = nil end
+        if Script.Animation.AnimationObject then pcall(function() Script.Animation.AnimationObject:Destroy() end) Script.Animation.AnimationObject = nil end
+        local ok, err = pcall(function()
+            Script.Animation.AnimationObject = Instance.new("Animation")
+            Script.Animation.AnimationObject.AnimationId = "rbxassetid://" .. idStr
+            Script.Animation.AnimationObject.Parent = char
+            Script.Animation.Animation = humanoid:LoadAnimation(Script.Animation.AnimationObject)
+            Script.Animation.Animation.Priority = Enum.AnimationPriority.Action4
+            Script.Animation.Animation.Looped = true
+            Script.Animation.Animation:Play()
+        end)
+        if not ok then
+            if Script.Animation.AnimationObject and Script.Animation.AnimationObject.Parent then
+                Script.Animation.AnimationObject:Destroy()
+                Script.Animation.AnimationObject = nil
+            end
+            Script.Animation.Animation = nil
+            if Window and Window.Notify then
+                Window:Notify({ Title = "Animation", Desc = "That ID failed to load. Check it's a real animation ID from Roblox (Create > Animation). Some games also block custom IDs.", Time = 6, Type = "normal" })
+            end
+        end
+    end
+
+    -- Outro: Script.Client sync (initial)
+    if Client.Character then
+        Script.Client.Character = Client.Character
+        Script.Client.RootPart = Client.Character:FindFirstChild("HumanoidRootPart") or nil
+        Script.Client.Humanoid = Client.Character:FindFirstChildOfClass("Humanoid") or nil
+        Script.Client.Tool = Client.Character:FindFirstChildOfClass("Tool") or nil
+    end
+    -- Outro: CharacterAdded
+    Client.CharacterAdded:Connect(function()
+        Script.Client.Character = Client.Character or nil
+        Script.Client.RootPart = Client.Character:WaitForChild("HumanoidRootPart") or nil
+        Script.Client.Humanoid = Client.Character:WaitForChild("Humanoid") or nil
+    end)
+    -- Outro: CharacterRemoving
+    Client.CharacterRemoving:Connect(function()
+        Script.Client.RootPart = nil
+        Script.Client.Character = nil
+        Script.Client.Humanoid = nil
+        Script.Client.Tool = nil
+    end)
+
+    local AnimationList = {"Custom", "Floss", "Flex Walk", "HUGO Let's Drive!"}
+    local DEFAULT_ANIMATION = "Floss"
+    local customAnimationId = ""  -- used when dropdown is "Custom"
+    local function getSelectedAnimation()
+        local s = UI.Misc.Client.Animation.Selected
+        if type(s) == "string" and s == "Custom" then return "Custom" end
+        if type(s) == "string" and s ~= "" and Script.Animation.Animations[s] then return s end
+        return DEFAULT_ANIMATION
+    end
+    local function setSelectedAnimation(name)
+        if name == "Custom" then
+            UI.Misc.Client.Animation.Selected = "Custom"
+            return
+        end
+        UI.Misc.Client.Animation.Selected = (type(name) == "string" and Script.Animation.Animations[name] and name) or DEFAULT_ANIMATION
+    end
+    local function getAnimationIdToPlay()
+        local selected = getSelectedAnimation()
+        if selected == "Custom" then
+            local raw = tostring(customAnimationId or ""):gsub("%s+", "")
+            return raw:match("%d+") or ""  -- extract digits (handles "123" or "rbxassetid://123")
+        end
+        return Script.Animation.Animations[selected]
+    end
+
     Misc:Section({Title = "Misc"})
     Misc:Toggle({
         Title = "Enable AntiLag",
@@ -5984,14 +6132,381 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         end
     })
 
-    Misc:Section({Title = "Exploits", Side = "Right"})
-    Misc:Toggle({
-        Title = "Server Lag",
-        Desc = "This will drop everyones FPS to like 5 (you will not be able to see this unless you have an alt)",
-        Value = false,
-        Callback = function(v)
-            ServerLag = v
-
+    -- Right-side multisection: one section with Animations | Exploits tabs (like Stats | Misc in Main)
+    local animExploitSec = Misc:Section({Title = "Animations & Exploits", Side = "Right"})
+    local animExploitContent = animExploitSec and animExploitSec.objects and animExploitSec.objects.content
+    local animExploitMain = animExploitSec and animExploitSec.objects and animExploitSec.objects.main
+    local animExploitHeader = animExploitSec and animExploitSec.objects and animExploitSec.objects.header
+    if animExploitContent and animExploitMain then
+        local theme = library.theme
+        local fontSize = library.font_size or 12
+        local fontFace = library.font_face
+        local dim2 = UDim2.new
+        if animExploitHeader then animExploitHeader.Visible = false end
+        -- Tab bar: Animations | Exploits
+        local tabBar = Instance.new("Frame")
+        tabBar.Name = "AnimExploitTabBar"
+        tabBar.Size = dim2(1, -4, 0, 17)
+        tabBar.Position = dim2(0, 2, 0, 3)
+        tabBar.BackgroundColor3 = theme.Outline or theme.Main
+        tabBar.BorderSizePixel = 0
+        tabBar.ClipsDescendants = true
+        tabBar.Parent = animExploitMain
+        local tabBarStroke = Instance.new("UIStroke", tabBar)
+        tabBarStroke.Color = theme.Border or theme.Inline or Color3.fromRGB(40, 40, 50)
+        tabBarStroke.Thickness = 1
+        tabBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local tabExploit = Instance.new("TextButton")
+        tabExploit.Name = "TabExploit"
+        tabExploit.Size = dim2(0.5, 0, 1, 0)
+        tabExploit.Position = dim2(0, 0, 0, 0)
+        tabExploit.Text = "Exploits"
+        tabExploit.TextColor3 = theme.Accent
+        tabExploit.TextSize = fontSize
+        tabExploit.BackgroundColor3 = theme.Main
+        tabExploit.BorderSizePixel = 0
+        tabExploit.AutoButtonColor = false
+        if fontFace then pcall(function() tabExploit.FontFace = fontFace end) end
+        tabExploit.Parent = tabBar
+        do
+            local s = Instance.new("UIStroke", tabExploit)
+            s.Color = theme.Border or theme.Inline or Color3.fromRGB(40, 40, 50)
+            s.Thickness = 1
+            s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        end
+        local underlineExploit = Instance.new("Frame")
+        underlineExploit.Size = dim2(1, -2, 0, 2)
+        underlineExploit.Position = dim2(0.5, 0, 1, 0)
+        underlineExploit.AnchorPoint = Vector2.new(0.5, 1)
+        underlineExploit.BackgroundColor3 = theme.Accent
+        underlineExploit.BorderSizePixel = 0
+        underlineExploit.Visible = true
+        underlineExploit.Parent = tabExploit
+        local tabMisc = Instance.new("TextButton")
+        tabMisc.Name = "TabMisc"
+        tabMisc.Size = dim2(0.5, 0, 1, 0)
+        tabMisc.Position = dim2(0.5, 0, 0, 0)
+        tabMisc.Text = "Misc"
+        tabMisc.TextColor3 = theme.Text
+        tabMisc.TextSize = fontSize
+        tabMisc.BackgroundColor3 = theme.Inline
+        tabMisc.BorderSizePixel = 0
+        tabMisc.AutoButtonColor = false
+        if fontFace then pcall(function() tabMisc.FontFace = fontFace end) end
+        tabMisc.Parent = tabBar
+        do
+            local s = Instance.new("UIStroke", tabMisc)
+            s.Color = theme.Border or theme.Inline or Color3.fromRGB(40, 40, 50)
+            s.Thickness = 1
+            s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        end
+        local underlineMisc = Instance.new("Frame")
+        underlineMisc.Size = dim2(1, -2, 0, 2)
+        underlineMisc.Position = dim2(0.5, 0, 1, 0)
+        underlineMisc.AnchorPoint = Vector2.new(0.5, 1)
+        underlineMisc.BackgroundColor3 = theme.Accent
+        underlineMisc.BorderSizePixel = 0
+        underlineMisc.Visible = false
+        underlineMisc.Parent = tabMisc
+        -- Top padding so content doesn't touch the tabs
+        local contentTopPad = Instance.new("UIPadding", animExploitContent)
+        contentTopPad.PaddingTop = UDim.new(0, 8)
+        contentTopPad.PaddingLeft = UDim.new(0, 0)
+        contentTopPad.PaddingRight = UDim.new(0, 0)
+        contentTopPad.PaddingBottom = UDim.new(0, 0)
+        -- Two content frames (Exploits first, Misc second)
+        local exploitFrame = Instance.new("Frame")
+        exploitFrame.Size = dim2(1, 0, 0, 0)
+        exploitFrame.AutomaticSize = Enum.AutomaticSize.Y
+        exploitFrame.BackgroundTransparency = 1
+        exploitFrame.LayoutOrder = 0
+        exploitFrame.Visible = true
+        exploitFrame.Parent = animExploitContent
+        local exploitList = Instance.new("UIListLayout", exploitFrame)
+        exploitList.Padding = UDim.new(0, 4)
+        exploitList.SortOrder = Enum.SortOrder.LayoutOrder
+        local exploitPad = Instance.new("UIPadding", exploitFrame)
+        exploitPad.PaddingLeft = UDim.new(0, 0)
+        exploitPad.PaddingRight = UDim.new(0, 0)
+        exploitPad.PaddingTop = UDim.new(0, 0)
+        exploitPad.PaddingBottom = UDim.new(0, 0)
+        local animFrame = Instance.new("Frame")
+        animFrame.Size = dim2(1, 0, 0, 0)
+        animFrame.AutomaticSize = Enum.AutomaticSize.Y
+        animFrame.BackgroundTransparency = 1
+        animFrame.LayoutOrder = 1
+        animFrame.Visible = false
+        animFrame.Parent = animExploitContent
+        local animList = Instance.new("UIListLayout", animFrame)
+        animList.Padding = UDim.new(0, 4)
+        animList.SortOrder = Enum.SortOrder.LayoutOrder
+        local animPad = Instance.new("UIPadding", animFrame)
+        animPad.PaddingLeft = UDim.new(0, 0)
+        animPad.PaddingRight = UDim.new(0, 0)
+        animPad.PaddingTop = UDim.new(0, 0)
+        animPad.PaddingBottom = UDim.new(0, 0)
+        -- Misc tab: Enable toggle (library-style: small checkbox + label, same as Streamer Mode)
+        local animEnableValue = false
+        local animEnableRow = Instance.new("TextButton")
+        animEnableRow.Size = dim2(1, 0, 0, 13)
+        animEnableRow.BackgroundTransparency = 1
+        animEnableRow.Text = ""
+        animEnableRow.BorderSizePixel = 0
+        animEnableRow.AutoButtonColor = false
+        animEnableRow.LayoutOrder = 0
+        animEnableRow.Parent = animFrame
+        local animEnableInd = Instance.new("Frame")
+        animEnableInd.Name = "indicator"
+        animEnableInd.Size = dim2(0, 10, 0, 10)
+        animEnableInd.Position = dim2(0, 0, 0, 1.5)
+        animEnableInd.BackgroundColor3 = theme.Element or Color3.fromRGB(50, 50, 55)
+        animEnableInd.BorderSizePixel = 0
+        animEnableInd.Parent = animEnableRow
+        local animEnableIndStroke = Instance.new("UIStroke", animEnableInd)
+        animEnableIndStroke.Color = theme.Border or Color3.fromRGB(40, 40, 50)
+        animEnableIndStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local animEnableIndGrad = Instance.new("UIGradient", animEnableInd)
+        animEnableIndGrad.Rotation = 90
+        animEnableIndGrad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(132,132,132))}
+        local animEnableLbl = Instance.new("TextLabel")
+        animEnableLbl.Size = dim2(1, 0, 0, 12)
+        animEnableLbl.Position = dim2(0, 15, 0, 0)
+        animEnableLbl.BackgroundTransparency = 1
+        animEnableLbl.Text = "Enable"
+        animEnableLbl.TextColor3 = theme.Text
+        animEnableLbl.TextSize = fontSize
+        animEnableLbl.TextXAlignment = Enum.TextXAlignment.Left
+        animEnableLbl.Parent = animEnableRow
+        if fontFace then pcall(function() animEnableLbl.FontFace = fontFace end) end
+        local function updateAnimEnableStyle()
+            animEnableInd.BackgroundColor3 = animEnableValue and (theme.Accent or Color3.fromRGB(53, 60, 108)) or (theme.Element or Color3.fromRGB(50, 50, 55))
+        end
+        animEnableRow.MouseButton1Down:Connect(function()
+            animEnableValue = not animEnableValue
+            updateAnimEnableStyle()
+            if animEnableValue then
+                task.spawn(function()
+                    local animId = getAnimationIdToPlay()
+                    if animId and tostring(animId):match("^%d+") then
+                        Script.Functions.LoadAnimation(animId)
+                        task.wait(0.5)
+                        if Script.Animation.Animation then
+                            pcall(function() Script.Animation.Animation:AdjustSpeed(UI.Misc.Client.Animation.Speed) end)
+                        end
+                    end
+                end)
+            else
+                if Script.Animation.Animation then pcall(function() Script.Animation.Animation:Stop() end) Script.Animation.Animation = nil end
+                if Script.Animation.AnimationObject then pcall(function() Script.Animation.AnimationObject:Destroy() end) Script.Animation.AnimationObject = nil end
+            end
+        end)
+        updateAnimEnableStyle()
+        -- Custom animation ID textbox (under Enable, used when dropdown is "Custom")
+        local customAnimRow = Instance.new("Frame")
+        customAnimRow.Size = dim2(1, 0, 0, 36)
+        customAnimRow.BackgroundTransparency = 1
+        customAnimRow.LayoutOrder = 1
+        customAnimRow.Parent = animFrame
+        local customAnimLbl = Instance.new("TextLabel")
+        customAnimLbl.Size = dim2(1, 0, 0, 14)
+        customAnimLbl.BackgroundTransparency = 1
+        customAnimLbl.Text = "Custom"
+        customAnimLbl.TextColor3 = theme.Text
+        customAnimLbl.TextSize = fontSize
+        customAnimLbl.TextXAlignment = Enum.TextXAlignment.Left
+        customAnimLbl.Parent = customAnimRow
+        if fontFace then pcall(function() customAnimLbl.FontFace = fontFace end) end
+        Instance.new("UIStroke", customAnimLbl).Color = Color3.fromRGB(0, 0, 0)
+        local customAnimBox = Instance.new("TextBox")
+        customAnimBox.Size = dim2(1, 0, 0, 18)
+        customAnimBox.Position = dim2(0, 0, 0, 18)
+        customAnimBox.BackgroundColor3 = theme.Element or Color3.fromRGB(50, 50, 55)
+        customAnimBox.BorderSizePixel = 0
+        customAnimBox.Text = ""
+        customAnimBox.PlaceholderText = "Animation ID"
+        customAnimBox.PlaceholderColor3 = theme["Text Inactive"] or Color3.fromRGB(188, 188, 188)
+        customAnimBox.TextColor3 = theme.Text
+        customAnimBox.TextSize = fontSize
+        customAnimBox.ClearTextOnFocus = false
+        customAnimBox.Parent = customAnimRow
+        if fontFace then pcall(function() customAnimBox.FontFace = fontFace end) end
+        Instance.new("UICorner", customAnimBox).CornerRadius = UDim.new(0, 4)
+        Instance.new("UIStroke", customAnimBox).Color = theme.Border or Color3.fromRGB(40, 40, 50)
+        -- Keep customAnimationId in sync with textbox so Enable/dropdown use current value without requiring FocusLost
+        customAnimBox:GetPropertyChangedSignal("Text"):Connect(function()
+            customAnimationId = tostring(customAnimBox.Text or ""):gsub("%s+", "")
+        end)
+        customAnimBox.FocusLost:Connect(function()
+            customAnimationId = tostring(customAnimBox.Text or ""):gsub("%s+", "")
+            if animEnableValue and getSelectedAnimation() == "Custom" then
+                local idStr = (customAnimationId):match("%d+")
+                if idStr then
+                    task.defer(function()
+                        Script.Functions.LoadAnimation(idStr)
+                        if Script.Animation.Animation then
+                            pcall(function() Script.Animation.Animation:AdjustSpeed(UI.Misc.Client.Animation.Speed) end)
+                        end
+                    end)
+                end
+            end
+        end)
+        -- Animation dropdown: use same library dropdown as all other dropdowns
+        local animSection = setmetatable({
+            window = nil,
+            tab = nil,
+            objects = { content = animFrame }
+        }, library.sections)
+        local animDrop, animDropObj, animDropObjects = animSection:Dropdown({
+            Name = "Animation",
+            Options = AnimationList,
+            default = DEFAULT_ANIMATION,
+            Callback = function(val)
+                local name = (type(val) == "table" and val.name) or tostring(val)
+                setSelectedAnimation(name)
+                if name == "Custom" and customAnimBox then
+                    customAnimationId = (customAnimBox.Text and tostring(customAnimBox.Text):gsub("%s+", "")) or ""
+                end
+                if Script.Animation.Animation or Script.Animation.AnimationObject then
+                    local animId = getAnimationIdToPlay()
+                    if animId and tostring(animId):match("^%d+") then
+                        task.defer(function()
+                            Script.Functions.LoadAnimation(animId)
+                            if Script.Animation.Animation then
+                                pcall(function() Script.Animation.Animation:AdjustSpeed(UI.Misc.Client.Animation.Speed) end)
+                            end
+                        end)
+                    end
+                end
+            end
+        })
+        if animDropObjects and animDropObjects["dropdown"] then
+            animDropObjects["dropdown"].LayoutOrder = 2
+        end
+        -- Misc tab: Speed slider (match library slider style)
+        local animSpeedValue = 1
+        local animSpeedRow = Instance.new("Frame")
+        animSpeedRow.Size = dim2(1, 0, 0, 29)
+        animSpeedRow.BackgroundTransparency = 1
+        animSpeedRow.LayoutOrder = 3
+        animSpeedRow.Parent = animFrame
+        local animSpeedLbl = Instance.new("TextLabel")
+        animSpeedLbl.Size = dim2(1, 0, 0, 14)
+        animSpeedLbl.BackgroundTransparency = 1
+        animSpeedLbl.Text = "Animation Speed"
+        animSpeedLbl.TextColor3 = theme.Text
+        animSpeedLbl.TextSize = fontSize
+        animSpeedLbl.TextXAlignment = Enum.TextXAlignment.Left
+        animSpeedLbl.Parent = animSpeedRow
+        if fontFace then pcall(function() animSpeedLbl.FontFace = fontFace end) end
+        Instance.new("UIStroke", animSpeedLbl).Color = Color3.fromRGB(0,0,0)
+        local animSpeedBar = Instance.new("Frame")
+        animSpeedBar.Size = dim2(1, 0, 0, 12)
+        animSpeedBar.Position = dim2(0, 0, 0, 17)
+        animSpeedBar.BackgroundColor3 = theme.Element or Color3.fromRGB(50, 50, 55)
+        animSpeedBar.BorderSizePixel = 0
+        animSpeedBar.Parent = animSpeedRow
+        local animSpeedBarStroke = Instance.new("UIStroke", animSpeedBar)
+        animSpeedBarStroke.Color = theme.Border or Color3.fromRGB(40, 40, 50)
+        animSpeedBarStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local animSpeedBarGrad = Instance.new("UIGradient", animSpeedBar)
+        animSpeedBarGrad.Rotation = 90
+        animSpeedBarGrad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(132,132,132))}
+        local animSpeedInd = Instance.new("Frame")
+        animSpeedInd.Size = dim2(0.02, 0, 1, 0)
+        animSpeedInd.BackgroundColor3 = theme.Accent or Color3.fromRGB(53, 60, 108)
+        animSpeedInd.BorderSizePixel = 0
+        animSpeedInd.Parent = animSpeedBar
+        local animSpeedIndGrad = Instance.new("UIGradient", animSpeedInd)
+        animSpeedIndGrad.Rotation = 90
+        animSpeedIndGrad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(132,132,132))}
+        local animSpeedVal = Instance.new("TextLabel")
+        animSpeedVal.Size = dim2(1, 0, 1, -1)
+        animSpeedVal.BackgroundTransparency = 1
+        animSpeedVal.Text = "1/50"
+        animSpeedVal.TextColor3 = theme.Text
+        animSpeedVal.TextSize = fontSize
+        animSpeedVal.Parent = animSpeedBar
+        if fontFace then pcall(function() animSpeedVal.FontFace = fontFace end) end
+        Instance.new("UIStroke", animSpeedVal).Color = Color3.fromRGB(0,0,0)
+        local animSpeedMin, animSpeedMax, animSpeedDecimals = 1, 50, 1
+        local function setAnimSpeed(v)
+            local rounded = (animSpeedDecimals == 0) and math.floor(v + 0.5) or (math.floor(v * 10 + 0.5) / 10)
+            rounded = math.clamp(rounded, animSpeedMin, animSpeedMax)
+            animSpeedValue = rounded
+            UI.Misc.Client.Animation.Speed = rounded
+            local range = animSpeedMax - animSpeedMin
+            local scale = range > 0 and math.clamp((rounded - animSpeedMin) / range, 0, 1) or 0
+            animSpeedInd.Size = dim2(math.max(0.02, scale), 0, 1, 0)
+            animSpeedVal.Text = string.format("%s/%s", tostring(rounded), tostring(animSpeedMax))
+            if Script.Animation.Animation then pcall(function() Script.Animation.Animation:AdjustSpeed(rounded) end) end
+        end
+        local animSpeedSliding = false
+        animSpeedBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                animSpeedSliding = true
+                local x = (input.Position.X - animSpeedBar.AbsolutePosition.X) / math.max(1, animSpeedBar.AbsoluteSize.X)
+                setAnimSpeed(animSpeedMin + x * (animSpeedMax - animSpeedMin))
+            end
+        end)
+        animSpeedBar.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                animSpeedSliding = false
+            end
+        end)
+        do
+            local uis = game:GetService("UserInputService")
+            uis.InputChanged:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseMovement and animSpeedSliding and animSpeedBar.Parent then
+                    local bar = animSpeedBar
+                    local ap, asize = bar.AbsolutePosition, bar.AbsoluteSize
+                    if asize.X > 0 then
+                        local x = (input.Position.X - ap.X) / asize.X
+                        setAnimSpeed(animSpeedMin + math.clamp(x, 0, 1) * (animSpeedMax - animSpeedMin))
+                    end
+                end
+            end)
+        end
+        setAnimSpeed(1)
+        -- Exploits tab: Server Lag toggle (library-style: small checkbox + label, same as other toggles)
+        local serverLagValue = false
+        local serverLagRow = Instance.new("TextButton")
+        serverLagRow.Size = dim2(1, 0, 0, 13)
+        serverLagRow.BackgroundTransparency = 1
+        serverLagRow.Text = ""
+        serverLagRow.BorderSizePixel = 0
+        serverLagRow.AutoButtonColor = false
+        serverLagRow.LayoutOrder = 0
+        serverLagRow.Parent = exploitFrame
+        local serverLagInd = Instance.new("Frame")
+        serverLagInd.Name = "indicator"
+        serverLagInd.Size = dim2(0, 10, 0, 10)
+        serverLagInd.Position = dim2(0, 0, 0, 1.5)
+        serverLagInd.BackgroundColor3 = theme.Element or Color3.fromRGB(50, 50, 55)
+        serverLagInd.BorderSizePixel = 0
+        serverLagInd.Parent = serverLagRow
+        local serverLagIndStroke = Instance.new("UIStroke", serverLagInd)
+        serverLagIndStroke.Color = theme.Border or Color3.fromRGB(40, 40, 50)
+        serverLagIndStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local serverLagIndGrad = Instance.new("UIGradient", serverLagInd)
+        serverLagIndGrad.Rotation = 90
+        serverLagIndGrad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(132,132,132))}
+        local serverLagLbl = Instance.new("TextLabel")
+        serverLagLbl.Size = dim2(1, 0, 0, 12)
+        serverLagLbl.Position = dim2(0, 15, 0, 0)
+        serverLagLbl.BackgroundTransparency = 1
+        serverLagLbl.Text = "Server Lag"
+        serverLagLbl.TextColor3 = theme.Text
+        serverLagLbl.TextSize = fontSize
+        serverLagLbl.TextXAlignment = Enum.TextXAlignment.Left
+        serverLagLbl.Parent = serverLagRow
+        if fontFace then pcall(function() serverLagLbl.FontFace = fontFace end) end
+        local function updateServerLagStyle()
+            serverLagInd.BackgroundColor3 = serverLagValue and (theme.Accent or Color3.fromRGB(53, 60, 108)) or (theme.Element or Color3.fromRGB(50, 50, 55))
+        end
+        serverLagRow.MouseButton1Down:Connect(function()
+            serverLagValue = not serverLagValue
+            ServerLag = serverLagValue
+            updateServerLagStyle()
             if ServerLag then
                 task.spawn(function()
                     while ServerLag do
@@ -6006,8 +6521,39 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
                     end
                 end)
             end
+        end)
+        updateServerLagStyle()
+        -- Tab click handlers (close any open dropdown when switching sub-tabs)
+        local function closeOpenDropdowns()
+            for other, _ in pairs(library.open_dropdowns or {}) do
+                if other and other.set_open then
+                    other:set_open(false)
+                end
+            end
         end
-    })
+        tabExploit.MouseButton1Click:Connect(function()
+            closeOpenDropdowns()
+            exploitFrame.Visible = true
+            animFrame.Visible = false
+            tabExploit.TextColor3 = theme.Accent
+            tabExploit.BackgroundColor3 = theme.Main
+            underlineExploit.Visible = true
+            tabMisc.TextColor3 = theme.Text
+            tabMisc.BackgroundColor3 = theme.Inline
+            underlineMisc.Visible = false
+        end)
+        tabMisc.MouseButton1Click:Connect(function()
+            closeOpenDropdowns()
+            exploitFrame.Visible = false
+            animFrame.Visible = true
+            tabMisc.TextColor3 = theme.Accent
+            tabMisc.BackgroundColor3 = theme.Main
+            underlineMisc.Visible = true
+            tabExploit.TextColor3 = theme.Text
+            tabExploit.BackgroundColor3 = theme.Inline
+            underlineExploit.Visible = false
+        end)
+    end
 
     Misc:Section({Title = "Streamer Mode", Side = "Right"})
     Misc:Toggle({
@@ -6026,6 +6572,7 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         Placeholder = "Spoof Name",
         Default = Globals.StreamerName or "",
         ClearTextOnFocus = false,
+        Size = UDim2.new(0.85, 0, 0, 20),
         Callback = function(value)
             SetSetting("StreamerName", value or "")
             UpdatePrivacyState()
