@@ -3125,7 +3125,7 @@ do
             section = self,
             name = Data.Name or Data.name or 'Toggle',
             flag = Data.Flag or Data.flag or utility.next_flag();
-            default = Data.Default or Data.default or false,
+            default = Data.Default or Data.default or Data.Value or Data.value or false,
             callback = Data.Callback or Data.callback or function() end;
             sub_elements = Data.SubElements or Data.subelements or false;
         };
@@ -3529,6 +3529,14 @@ TDS.Multiplayer = true
 function TDS:Addons()
     return true
 end
+
+-- API expected by autostrat/strategy scripts (e.g. TDS:Loadout, TDS:Mode, TDS:GameInfo, TDS:Place, TDS:Upgrade, TDS:Sell from Recorder format)
+function TDS:Loadout(...) end
+function TDS:Mode(...) end
+function TDS:GameInfo(...) end
+function TDS:Place(...) end
+function TDS:Upgrade(...) end
+function TDS:Sell(...) end
 
 local UpgradeHistory = {}
 
@@ -5990,6 +5998,7 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
                 Animation = {
                     Selected = "Floss",
                     Speed = 1,
+                    Enabled = false,
                 },
             },
         },
@@ -6063,11 +6072,22 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         Script.Client.Humanoid = Client.Character:FindFirstChildOfClass("Humanoid") or nil
         Script.Client.Tool = Client.Character:FindFirstChildOfClass("Tool") or nil
     end
-    -- Outro: CharacterAdded
+    -- Outro: CharacterAdded (re-apply animation after respawn if still enabled)
     Client.CharacterAdded:Connect(function()
         Script.Client.Character = Client.Character or nil
         Script.Client.RootPart = Client.Character:WaitForChild("HumanoidRootPart") or nil
         Script.Client.Humanoid = Client.Character:WaitForChild("Humanoid") or nil
+        task.defer(function()
+            refreshClient()
+            if not UI.Misc.Client.Animation.Enabled then return end
+            local id = getAnimationIdToPlay and getAnimationIdToPlay()
+            if id and tostring(id):match("^%d+") then
+                Script.Functions.LoadAnimation(id)
+                if Script.Animation.Animation then
+                    pcall(function() Script.Animation.Animation:AdjustSpeed(UI.Misc.Client.Animation.Speed) end)
+                end
+            end
+        end)
     end)
     -- Outro: CharacterRemoving
     Client.CharacterRemoving:Connect(function()
@@ -6314,6 +6334,7 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
         end
         animEnableRow.MouseButton1Down:Connect(function()
             animEnableValue = not animEnableValue
+            UI.Misc.Client.Animation.Enabled = animEnableValue
             updateAnimEnableStyle()
             if animEnableValue then
                 task.spawn(function()
@@ -6386,11 +6407,11 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
             tab = nil,
             objects = { content = animFrame }
         }, library.sections)
-        UI.Misc.Client.Animation.Selected = ""
+        UI.Misc.Client.Animation.Selected = DEFAULT_ANIMATION
         local animDrop, animDropObj, animDropObjects = animSection:Dropdown({
             Name = "Animation",
             Options = AnimationList,
-            default = nil,
+            default = DEFAULT_ANIMATION,
             Callback = function(val)
                 local name = (type(val) == "table" and val.name) or tostring(val)
                 setSelectedAnimation(name)
@@ -6400,7 +6421,7 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
                 local animId = getAnimationIdToPlay()
                 if not animEnableValue or not animId or not tostring(animId):match("^%d+") then
                     stopAnimationIfPlaying()
-                elseif Script.Animation.Animation or Script.Animation.AnimationObject then
+                else
                     task.defer(function()
                         Script.Functions.LoadAnimation(animId)
                         if Script.Animation.Animation then
@@ -6977,6 +6998,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
 
         local selectedConfigRow = nil
         local selectedConfigFileName = nil
+        local function updatePlayToggleState() end
         local accentColor = theme.Accent or Color3.fromRGB(80, 120, 255)
         local normalTextColor = theme.Text or Color3.fromRGB(255, 255, 255)
 
@@ -7144,6 +7166,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
                         configNameTb.box.Text = displayName
                     end
                     updateConfigPreview(fullName)
+                    updatePlayToggleState()
                 end)
             end
             if #names == 0 then
@@ -7173,6 +7196,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
                     end
                 end
             end
+            updatePlayToggleState()
         end
 
         refreshConfigsDisplay()
@@ -7184,6 +7208,25 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             ClearTextOnFocus = false,
             Callback = function() end
         })
+        -- Only restore config selection when Play was enabled last time (user must enable Play first to remember)
+        if Globals.AutostratPlaying and Globals.AutostratPlayingConfig and tostring(Globals.AutostratPlayingConfig):gsub("%s+", "") ~= "" then
+            local saved = tostring(Globals.AutostratPlayingConfig):gsub("%.lua$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+            refreshConfigsDisplay()
+            if configsListInner and saved ~= "" then
+                for _, child in ipairs(configsListInner:GetChildren()) do
+                    if child:IsA("TextButton") then
+                        local rowDisplay = child.Text:gsub("%.lua$", "")
+                        if child.Text == saved or child.Text == saved .. ".lua" or rowDisplay == saved then
+                            selectedConfigRow = child
+                            selectedConfigFileName = child.Text
+                            child.TextColor3 = accentColor
+                            if updateConfigPreview then updateConfigPreview(child.Text) end
+                            break
+                        end
+                    end
+                end
+            end
+        end
 
         -- Enter script textbox (only shown after entering config name and pressing Create)
         local scriptWrap = Instance.new("Frame")
@@ -7308,33 +7351,142 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             end)
         end
 
-        Settings:Button({Title = "Play", Desc = "Execute selected autostrat (select in list above)", Callback = function()
-            -- Prefer the highlighted list selection so Play runs the config you clicked, not the textbox or first in list
-            local name = nil
-            if selectedConfigFileName and selectedConfigFileName ~= "" then
-                name = selectedConfigFileName:gsub("%.lua$", "")
-            end
-            if not name or name == "" then
-                name = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
-            end
-            if name == "" then
-                local list = getConfigNameList()
-                if #list > 0 then
-                    name = list[1]:gsub("%.lua$", "")
+        local playToggleRef
+        local playToggleObjects
+        local _, playToggleRef, playToggleObjects = Settings:Toggle({
+            Title = "Play",
+            Desc = "Select a config from the list above first, then enable to play. Saves when enabled.",
+            Value = Globals.AutostratPlaying,
+            Callback = function(state)
+                if state then
+                    -- Block immediately if nothing selected (e.g. restored or click got through)
+                    local function hasSelection()
+                        if selectedConfigFileName and selectedConfigFileName ~= "" then return true end
+                        local tb = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+                        if tb == "" then return false end
+                        local list = getConfigNameList()
+                        for _, fn in ipairs(list) do
+                            if fn == tb or fn == tb .. ".lua" or fn:gsub("%.lua$", "") == tb then return true end
+                        end
+                        return false
+                    end
+                    if not hasSelection() then
+                        if playToggleRef and playToggleRef.set then playToggleRef:set(false) end
+                        SetSetting("AutostratPlaying", false)
+                        SetSetting("AutostratPlayingConfig", "")
+                        return
+                    end
+                    -- Only allow play when a config is explicitly selected (list or textbox matching a file)
+                    local name = nil
+                    if selectedConfigFileName and selectedConfigFileName ~= "" then
+                        name = selectedConfigFileName:gsub("%.lua$", "")
+                    end
+                    if not name or name == "" then
+                        local tb = (configNameTb and configNameTb.box and configNameTb.box.Text or ""):gsub("%s+", ""):gsub("[^%w%._%-]", "")
+                        if tb ~= "" then
+                            local list = getConfigNameList()
+                            for _, fn in ipairs(list) do
+                                if fn == tb or fn == tb .. ".lua" or fn:gsub("%.lua$", "") == tb then
+                                    name = fn:gsub("%.lua$", "")
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    if not name or name == "" then
+                        Window:Notify({Title = "Strats Player", Desc = "Select a config from the list first.", Time = 3, Type = "normal"})
+                        SetSetting("AutostratPlaying", false)
+                        SetSetting("AutostratPlayingConfig", "")
+                        if playToggleRef and playToggleRef.set then playToggleRef:set(false) end
+                        return
+                    end
+                    SetSetting("AutostratPlaying", true)
+                    SetSetting("AutostratPlayingConfig", name)
+                    task.delay(1, function() startAutostratPlayer(name) end)
+                else
+                    SetSetting("AutostratPlaying", false)
+                    SetSetting("AutostratPlayingConfig", "")
                 end
             end
-            if name == "" then
-                Window:Notify({Title = "Strats Player", Desc = "Select a config from the list or create one first.", Time = 3, Type = "normal"})
-                return
-            end
-            startAutostratPlayer(name)
-        end})
+        })
 
-        Settings:Button({Title = "Stop", Desc = "Clear saved play state", Callback = function()
-            SetSetting("AutostratPlaying", false)
-            SetSetting("AutostratPlayingConfig", "")
-            Window:Notify({Title = "Strats Player", Desc = "Cleared.", Time = 1, Type = "normal"})
-        end})
+        local playToggleBlockOverlay = nil
+        function updatePlayToggleState()
+            local function hasConfigSelected()
+                if selectedConfigFileName and selectedConfigFileName ~= "" then return true end
+                local tb = (configNameTb and configNameTb.box and configNameTb.box.Text) or ""
+                local name = tb:gsub("%s+", ""):gsub("[^%w%._%-]", "")
+                if name == "" then return false end
+                local list = getConfigNameList()
+                for _, fn in ipairs(list) do
+                    if fn == name or fn == name .. ".lua" or fn:gsub("%.lua$", "") == name then return true end
+                end
+                return false
+            end
+            local hasSelection = hasConfigSelected()
+            local toggleBtn = playToggleObjects and playToggleObjects["toggle"]
+            if toggleBtn then
+                toggleBtn.Active = hasSelection
+                -- Block clicks with overlay when nothing selected (works even if Active is ignored)
+                if not hasSelection then
+                    if not playToggleBlockOverlay then
+                        playToggleBlockOverlay = Instance.new("TextButton")
+                        playToggleBlockOverlay.Name = "PlayToggleBlock"
+                        playToggleBlockOverlay.Size = UDim2.new(1, 0, 1, 0)
+                        playToggleBlockOverlay.Position = UDim2.new(0, 0, 0, 0)
+                        playToggleBlockOverlay.BackgroundTransparency = 1
+                        playToggleBlockOverlay.BorderSizePixel = 0
+                        playToggleBlockOverlay.Text = ""
+                        playToggleBlockOverlay.AutoButtonColor = false
+                        playToggleBlockOverlay.ZIndex = (toggleBtn.ZIndex or 1) + 10
+                        playToggleBlockOverlay.Parent = toggleBtn
+                    end
+                    playToggleBlockOverlay.Visible = true
+                else
+                    if playToggleBlockOverlay then
+                        playToggleBlockOverlay.Visible = false
+                    end
+                end
+            end
+            if not hasSelection and playToggleRef and playToggleRef.get and playToggleRef:get() then
+                playToggleRef:set(false)
+            end
+        end
+        if configNameTb and configNameTb.box then
+            configNameTb.box:GetPropertyChangedSignal("Text"):Connect(updatePlayToggleState)
+        end
+        updatePlayToggleState()
+
+        -- When Play was enabled and config saved, run the config once on load (delay so TDS is ready)
+        if Globals.AutostratPlaying and type(Globals.AutostratPlayingConfig) == "string" and Globals.AutostratPlayingConfig:gsub("%s+", "") ~= "" then
+            local configToRun = tostring(Globals.AutostratPlayingConfig):gsub("%.lua$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+            task.delay(1, function()
+                if configToRun and configToRun ~= "" then
+                    startAutostratPlayer(configToRun)
+                end
+            end)
+        end
+
+        -- When entering a game (ReactUniversalHotbar appears), run config if Play is enabled
+        task.spawn(function()
+            local gui = LocalPlayer:WaitForChild("PlayerGui")
+            local lastInGame = false
+            while true do
+                task.wait(2)
+                local inGame = gui:FindFirstChild("ReactUniversalHotbar") ~= nil
+                if inGame and not lastInGame then
+                    if Globals.AutostratPlaying and type(Globals.AutostratPlayingConfig) == "string" and Globals.AutostratPlayingConfig:gsub("%s+", "") ~= "" then
+                        local configToRun = tostring(Globals.AutostratPlayingConfig):gsub("%.lua$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+                        task.delay(1.5, function()
+                            if configToRun and configToRun ~= "" then
+                                startAutostratPlayer(configToRun)
+                            end
+                        end)
+                    end
+                end
+                lastInGame = inGame
+            end
+        end)
 
         -- Divider between player controls and config management
         local divider = Instance.new("Frame")
