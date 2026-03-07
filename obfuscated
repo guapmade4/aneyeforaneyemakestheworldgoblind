@@ -3613,9 +3613,6 @@ local function Apply3dRendering()
 end
 
 LoadSettings()
--- Ensure UI toggle bind is Left Shift
-Globals.MenuToggleKey = "LeftShift"
-SaveSettings()
 Apply3dRendering()
 
 local isTagChangerRunning = false
@@ -4590,6 +4587,7 @@ function Window:Notify(n)
         table.insert(self._notifQueue, n)
         return
     end
+    if not self._notifQueue then self._notifQueue = {} end
     self._notifShowing = true
     local theme = library and library.theme or {}
     local title = tostring(n.Title or "Notification")
@@ -4605,7 +4603,8 @@ function Window:Notify(n)
     local rgb = Color3.fromRGB
     local dim2 = UDim2.new
     local dim = UDim.new
-    local accentColor = (notifType == "error" and rgb(200, 60, 60)) or (theme.Accent or rgb(53, 60, 108))
+    local isAutoRejoinWarning = (tostring(n.Title or "") == "Auto Rejoin")
+    local accentColor = (notifType == "error" and rgb(200, 60, 60)) or (isAutoRejoinWarning and rgb(255, 200, 0)) or (theme.Accent or rgb(53, 60, 108))
     local notifWidth = 220
     local pad = 6
     local lineCount = math.ceil(#desc / 32)
@@ -4668,6 +4667,19 @@ function Window:Notify(n)
     descLabel.TextWrapped = true
     descLabel.ZIndex = 100000
     stroke.ZIndex = 100000
+    if isAutoRejoinWarning and accentLine then
+        task.spawn(function()
+            local yellow = rgb(255, 200, 0)
+            local darkYellow = rgb(180, 140, 0)
+            while frame and frame.Parent and accentLine and accentLine.Parent do
+                accentLine.BackgroundColor3 = yellow
+                task.wait(0.4)
+                if not (frame and frame.Parent) then break end
+                accentLine.BackgroundColor3 = darkYellow
+                task.wait(0.4)
+            end
+        end)
+    end
     -- Slide in from top
     local tweenIn = TweenService:Create(frame, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
         Position = dim2(0.5, 0, 0, topOffset)
@@ -4676,7 +4688,7 @@ function Window:Notify(n)
     task.delay(duration, function()
         if not frame or not frame.Parent then
             self._notifShowing = false
-            if #self._notifQueue > 0 then
+            if self._notifQueue and #self._notifQueue > 0 then
                 local nextN = table.remove(self._notifQueue, 1)
                 self:Notify(nextN)
             end
@@ -4690,7 +4702,7 @@ function Window:Notify(n)
         tweenOut.Completed:Connect(function()
             if frame then frame:Destroy() end
             self._notifShowing = false
-            if #self._notifQueue > 0 then
+            if self._notifQueue and #self._notifQueue > 0 then
                 local nextN = table.remove(self._notifQueue, 1)
                 self:Notify(nextN)
             end
@@ -4963,7 +4975,6 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
         Value = IsGatlingGunAllowed() and Globals.GatlingEnabled or false,
         Callback = function(state)
             if state and not IsGatlingGunAllowed() then
-                Window:Notify({Title = "Not Whitelisted", Desc = "You are not whitelisted to use the Gatling Gun.", Time = 4, Type = "error"})
                 SetSetting("GatlingEnabled", false)
                 for _, row in ipairs(gatlingFeatureRows) do row.Visible = false end
                 -- Force toggle back to off: set state and override indicator so it never stays on
@@ -4985,14 +4996,10 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             end
             SetSetting("GatlingEnabled", state)
             for _, row in ipairs(gatlingFeatureRows) do
-                row.Visible = state
+                row.Visible = state and IsGatlingGunAllowed()
             end
             if state then
-                if ApplyGatlingHook() then
-                    Window:Notify({Title = ">.<", Desc = "Use the tower in-game.", Time = 3, Type = "normal"})
-                else
-                    Window:Notify({Title = ">.<", Desc = "Please play a match first and have gatling gun equipped.", Time = 4, Type = "error"})
-                end
+                ApplyGatlingHook()
             end
         end
     })
@@ -5018,7 +5025,7 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
             overlay.ZIndex = (toggleBtn.ZIndex or 1) + 2
             overlay.Parent = toggleBtn
             overlay.MouseButton1Down:Connect(function()
-                Window:Notify({Title = "Not Whitelisted", Desc = "You are not whitelisted to use the Gatling Gun.", Time = 4, Type = "error"})
+                Window:Notify({Title = "Not Whitelisted", Desc = "You have to be certified.", Time = 4, Type = "error"})
             end)
         end
     end
@@ -5060,7 +5067,7 @@ local Main = Window:Tab({Title = "Main", Icon = "stamp"}) do
     if rangeObjs and rangeObjs["slider"] then table.insert(gatlingFeatureRows, rangeObjs["slider"]) end
 
     for _, row in ipairs(gatlingFeatureRows) do
-        row.Visible = Globals.GatlingEnabled
+        row.Visible = Globals.GatlingEnabled and IsGatlingGunAllowed()
     end
 
     local statsSec = Main:Section({Title = "Stats", Side = "Right"})
@@ -5668,6 +5675,16 @@ local Strategies = Window:Tab({Title = "Strategies", Icon = "newspaper"}) do
         Value = Globals.AutoRejoin,
         Callback = function(v) SetSetting("AutoRejoin", v) end
     })
+    if Globals.AutoRejoin then
+        task.defer(function()
+            Window:Notify({
+                Title = "Auto Rejoin",
+                Desc = "Warning: Auto Rejoin is enabled. You will automatically rejoin the gamemode after winning.",
+                Time = 10,
+                Type = "normal"
+            })
+        end)
+    end
     Strategies:Toggle({
         Title = "Auto Skip Waves",
         Desc = "Skips all Waves",
@@ -6065,24 +6082,38 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
     local customAnimationId = ""  -- used when dropdown is "Custom"
     local function getSelectedAnimation()
         local s = UI.Misc.Client.Animation.Selected
-        if type(s) == "string" and s == "Custom" then return "Custom" end
-        if type(s) == "string" and s ~= "" and Script.Animation.Animations[s] then return s end
-        return DEFAULT_ANIMATION
+        if type(s) ~= "string" or s == "" then return nil end  -- nothing selected
+        if s == "Custom" then return "Custom" end
+        if Script.Animation.Animations[s] then return s end
+        return nil  -- invalid or cleared
     end
     local function setSelectedAnimation(name)
         if name == "Custom" then
             UI.Misc.Client.Animation.Selected = "Custom"
             return
         end
-        UI.Misc.Client.Animation.Selected = (type(name) == "string" and Script.Animation.Animations[name] and name) or DEFAULT_ANIMATION
+        if not name or name == "" then
+            UI.Misc.Client.Animation.Selected = ""
+            return
+        end
+        if type(name) == "string" and Script.Animation.Animations[name] then
+            UI.Misc.Client.Animation.Selected = name
+        else
+            UI.Misc.Client.Animation.Selected = ""
+        end
     end
     local function getAnimationIdToPlay()
         local selected = getSelectedAnimation()
+        if not selected then return nil end
         if selected == "Custom" then
             local raw = tostring(customAnimationId or ""):gsub("%s+", "")
             return raw:match("%d+") or ""  -- extract digits (handles "123" or "rbxassetid://123")
         end
         return Script.Animation.Animations[selected]
+    end
+    local function stopAnimationIfPlaying()
+        if Script.Animation.Animation then pcall(function() Script.Animation.Animation:Stop() end) Script.Animation.Animation = nil end
+        if Script.Animation.AnimationObject then pcall(function() Script.Animation.AnimationObject:Destroy() end) Script.Animation.AnimationObject = nil end
     end
 
     Misc:Section({Title = "Misc"})
@@ -6296,8 +6327,7 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
                     end
                 end)
             else
-                if Script.Animation.Animation then pcall(function() Script.Animation.Animation:Stop() end) Script.Animation.Animation = nil end
-                if Script.Animation.AnimationObject then pcall(function() Script.Animation.AnimationObject:Destroy() end) Script.Animation.AnimationObject = nil end
+                stopAnimationIfPlaying()
             end
         end)
         updateAnimEnableStyle()
@@ -6356,26 +6386,27 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
             tab = nil,
             objects = { content = animFrame }
         }, library.sections)
+        UI.Misc.Client.Animation.Selected = ""
         local animDrop, animDropObj, animDropObjects = animSection:Dropdown({
             Name = "Animation",
             Options = AnimationList,
-            default = DEFAULT_ANIMATION,
+            default = nil,
             Callback = function(val)
                 local name = (type(val) == "table" and val.name) or tostring(val)
                 setSelectedAnimation(name)
                 if name == "Custom" and customAnimBox then
                     customAnimationId = (customAnimBox.Text and tostring(customAnimBox.Text):gsub("%s+", "")) or ""
                 end
-                if Script.Animation.Animation or Script.Animation.AnimationObject then
-                    local animId = getAnimationIdToPlay()
-                    if animId and tostring(animId):match("^%d+") then
-                        task.defer(function()
-                            Script.Functions.LoadAnimation(animId)
-                            if Script.Animation.Animation then
-                                pcall(function() Script.Animation.Animation:AdjustSpeed(UI.Misc.Client.Animation.Speed) end)
-                            end
-                        end)
-                    end
+                local animId = getAnimationIdToPlay()
+                if not animEnableValue or not animId or not tostring(animId):match("^%d+") then
+                    stopAnimationIfPlaying()
+                elseif Script.Animation.Animation or Script.Animation.AnimationObject then
+                    task.defer(function()
+                        Script.Functions.LoadAnimation(animId)
+                        if Script.Animation.Animation then
+                            pcall(function() Script.Animation.Animation:AdjustSpeed(UI.Misc.Client.Animation.Speed) end)
+                        end
+                    end)
                 end
             end
         })
