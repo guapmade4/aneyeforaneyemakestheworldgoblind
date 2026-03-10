@@ -5581,11 +5581,12 @@ end
     })
     local equipperDropdown = Main:Dropdown({
         Title = "Equip:",
-        Desc = "Select towers to equip (multi-select). Must be in a game.",
+        Desc = IsGatlingGunAllowed() and "Select towers to equip (multi-select). Must be in a game." or "Whitelist only.",
         List = EquipperTowerList,
         Value = {},
         Multi = true,
         Callback = function(choice)
+            if not IsGatlingGunAllowed() then return end
             local list = type(choice) == "table" and choice or { choice }
             if #list == 0 then return end
             local limited = {}
@@ -5626,6 +5627,35 @@ end
             end)
         end
     })
+    -- When not whitelisted: block dropdown from opening and block textbox interaction
+    if equipperDropdown and equipperDropdown.set_open then
+        local orig_set_open = equipperDropdown.set_open
+        equipperDropdown.set_open = function(self, bool)
+            if bool and not IsGatlingGunAllowed() then
+                Window:Notify({ Title = "Equipper", Desc = "Equipper is whitelist only.", Time = 4, Type = "error" })
+                return
+            end
+            return orig_set_open(self, bool)
+        end
+    end
+    if not IsGatlingGunAllowed() and equipperSearch and equipperSearch.box then
+        equipperSearch.box.Active = false
+        local wrap = equipperSearch.box.Parent and equipperSearch.box.Parent.Parent
+        if wrap and wrap:IsA("GuiObject") then
+            wrap.Active = false
+            local overlay = Instance.new("TextButton")
+            overlay.Name = "EquipperWhitelistBlock"
+            overlay.Size = UDim2.new(1, 0, 1, 0)
+            overlay.Position = UDim2.new(0, 0, 0, 0)
+            overlay.BackgroundTransparency = 1
+            overlay.Text = ""
+            overlay.ZIndex = (wrap.ZIndex or 1) + 2
+            overlay.Parent = wrap
+            overlay.MouseButton1Down:Connect(function()
+                Window:Notify({ Title = "Equipper", Desc = "Equipper is whitelist only.", Time = 4, Type = "error" })
+            end)
+        end
+    end
     if equipperSearch and equipperSearch.box and equipperDropdown and equipperDropdown.options then
         equipperSearch.box:GetPropertyChangedSignal("Text"):Connect(function()
             local q = string.lower((equipperSearch.box.Text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -8263,6 +8293,9 @@ local function WaitForEquippedToInclude(towerName, timeoutSec)
 end
 
 function TDS:Loadout(...)
+    if not IsGatlingGunAllowed() then
+        return false
+    end
     if GameState ~= "GAME" then
         return false
     end
