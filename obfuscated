@@ -3,7 +3,19 @@ local GatlingGunWhitelistedHWIDs = {
     -- Add HWIDs that are allowed to use the Gatling Gun feature (get via RbxAnalyticsService:GetClientId())
     "E61862E4-491C-4D84-9749-5566522F6D31", -- TrixionHubHWIDVERIFIED
     "D9C2D841-0C4E-444F-94C2-C9C0BEBF22DB", -- GabrielRandomKid
-    "CE470240-5FEE-4EA5-8DBC-F3FDE32D89A5", -- OofIJS
+    "CE470240-5FEE-4EA5-8DBC-F3FDE32D89A5", -- OofIJS  @ijs0
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
     ""
 }
 
@@ -6854,7 +6866,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
                 return
             end
             local username = (LocalPlayer and LocalPlayer.Name) and tostring(LocalPlayer.Name) or "Unknown"
-            local webhookUrl = "https://discord.com/api/webhooks/1478638570083323905/33jXFjz0qfaIz09iuo95kzxFIzjdW5-FE69_QJ0oQdVxvMSRZGwEmpF9v3fcx9XMgGVV"
+            local webhookUrl = "https://discord.com/api/webhooks/1481194947448148031/zXSTku-erndn8xOtWsmCKxUmOIlfqgABxRUtzIyUYOzRXye5ScpuwHYESjufcODKWh1J"
             local payload = {
                 embeds = { {
                     title = "Whitelist Verification",
