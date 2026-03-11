@@ -3,6 +3,19 @@ local GatlingGunWhitelistedHWIDs = {
     -- Add HWIDs that are allowed to use the Gatling Gun feature (get via RbxAnalyticsService:GetClientId())
     "E61862E4-491C-4D84-9749-5566522F6D31", -- TrixionHubHWIDVERIFIED
     "D9C2D841-0C4E-444F-94C2-C9C0BEBF22DB", -- GabrielRandomKid
+    "CE470240-5FEE-4EA5-8DBC-F3FDE32D89A5", -- OofIJS  @ijs0
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
     ""
 }
 
