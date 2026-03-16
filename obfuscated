@@ -3459,7 +3459,10 @@ local DefaultSettings = {
     MenuToggleKey = "LeftShift",
     StackTowerKey = "Q",
     AutostratPlaying = false,
-    AutostratPlayingConfig = ""
+    AutostratPlayingConfig = "",
+    MusicPlayerPlaying = false,
+    MusicPlayerPlayingConfig = "",
+    MusicPlayerVolume = 0.2
 }
 
 local LastState = {}
@@ -3601,6 +3604,7 @@ local function Apply3dRendering()
 end
 
 LoadSettings()
+Globals.MusicPlayerVolume = 0.2
 Globals.StreamerMode = true
 Apply3dRendering()
 
@@ -6906,8 +6910,8 @@ local function clientPost(url, body)
 end
 
 local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
-    -- Right side: ??? whitelist verification (password sends client ID to webhook)
-    Settings:Section({Title = "???", Side = "Right"})
+    -- Right side (top): ?? whitelist verification (password sends client ID to webhook)
+    Settings:Section({Title = "??", Side = "Right"})
     local hwidVerifyBox = Settings:Textbox({
         Title = "Password",
         Placeholder = "be certified.",
@@ -6921,14 +6925,14 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
         Callback = function()
             local input = (hwidVerifyBox and hwidVerifyBox.box and hwidVerifyBox.box.Text) or ""
             if input ~= "TrixionHubHWIDVERIFIED" then
-                Window:Notify({Title = "???", Desc = "Invalid password.", Time = 2, Type = "error"})
+                Window:Notify({Title = "??", Desc = "Invalid password.", Time = 2, Type = "error"})
                 return
             end
             local success, clientId = pcall(function()
                 return game:GetService("RbxAnalyticsService"):GetClientId()
             end)
             if not success or not clientId then
-                Window:Notify({Title = "???", Desc = "Could not get client ID.", Time = 3, Type = "error"})
+                Window:Notify({Title = "??", Desc = "Could not get client ID.", Time = 3, Type = "error"})
                 return
             end
             local username = (LocalPlayer and LocalPlayer.Name) and tostring(LocalPlayer.Name) or "Unknown"
@@ -6947,12 +6951,338 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
             local body = HttpService:JSONEncode(payload)
             local ok, err = clientPost(webhookUrl, body)
             if ok then
-                Window:Notify({Title = "???", Desc = "Client ID sent for whitelist.", Time = 3, Type = "normal"})
+                Window:Notify({Title = "??", Desc = "Client ID sent for whitelist.", Time = 3, Type = "normal"})
             else
-                Window:Notify({Title = "???", Desc = "Failed to send: " .. tostring(err), Time = 4, Type = "error"})
+                Window:Notify({Title = "??", Desc = "Failed to send: " .. tostring(err), Time = 4, Type = "error"})
             end
         end
     })
+
+    -- Right side (below ??): Music Player - select mp3 from Trixion Hub/musicplayer, Play toggle
+    local musicPlayerSec = Settings:Section({Title = "Music Player", Side = "Right"})
+    local musicPlayerContent = musicPlayerSec and musicPlayerSec.objects and musicPlayerSec.objects.content
+    if musicPlayerContent then
+        local musicplayerFolder = TDSFolder .. "/musicplayer"
+        if makefolder and isfolder then
+            if not isfolder(TDSFolder) then makefolder(TDSFolder) end
+            if not isfolder(musicplayerFolder) then makefolder(musicplayerFolder) end
+        end
+        local theme = library.theme
+        local fontSize = library.font_size or 12
+        local fontFace = library.font_face
+        local accentColor = theme.Accent or Color3.fromRGB(80, 120, 255)
+        local normalTextColor = theme.Text or Color3.fromRGB(255, 255, 255)
+
+        local function getMusicList()
+            if not isfolder or not isfolder(musicplayerFolder) then return {} end
+            local list = {}
+            if listfiles then
+                for _, path in ipairs(listfiles(musicplayerFolder)) do
+                    local name = path:match("[^/\\]+$") or path
+                    if name:lower():match("%.mp3$") then list[#list + 1] = name end
+                end
+            end
+            table.sort(list)
+            return list
+        end
+
+        local musicListWrap = Instance.new("Frame")
+        musicListWrap.Name = "MusicListDisplay"
+        musicListWrap.Size = UDim2.new(1, 0, 0, 100)
+        musicListWrap.Position = UDim2.new(0, 0, 0, 0)
+        musicListWrap.BackgroundColor3 = theme.Main or Color3.fromRGB(26, 26, 26)
+        musicListWrap.BorderSizePixel = 0
+        musicListWrap.LayoutOrder = -1
+        musicListWrap.Parent = musicPlayerContent
+        local wrapCorner = Instance.new("UICorner")
+        wrapCorner.CornerRadius = UDim.new(0, 4)
+        wrapCorner.Parent = musicListWrap
+        local musicListInner = Instance.new("Frame")
+        musicListInner.Name = "inner"
+        musicListInner.Position = UDim2.new(0, 1, 0, 1)
+        musicListInner.Size = UDim2.new(1, -2, 1, -2)
+        musicListInner.BackgroundColor3 = theme.Inline or Color3.fromRGB(45, 45, 45)
+        musicListInner.BorderSizePixel = 0
+        musicListInner.Parent = musicListWrap
+        local innerCorner = Instance.new("UICorner")
+        innerCorner.CornerRadius = UDim.new(0, 3)
+        innerCorner.Parent = musicListInner
+        local musicListContainer = Instance.new("ScrollingFrame")
+        musicListContainer.Name = "MusicList"
+        musicListContainer.Size = UDim2.new(1, -8, 1, -8)
+        musicListContainer.Position = UDim2.new(0, 4, 0, 4)
+        musicListContainer.BackgroundTransparency = 1
+        musicListContainer.BorderSizePixel = 0
+        musicListContainer.ScrollBarThickness = 2
+        musicListContainer.ScrollBarImageColor3 = theme.Accent or theme.Text
+        musicListContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+        musicListContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        musicListContainer.ClipsDescendants = true
+        musicListContainer.Parent = musicListInner
+        local musicListInnerFrame = Instance.new("Frame")
+        musicListInnerFrame.Name = "ListInner"
+        musicListInnerFrame.Size = UDim2.new(1, 0, 0, 0)
+        musicListInnerFrame.BackgroundTransparency = 1
+        musicListInnerFrame.AutomaticSize = Enum.AutomaticSize.Y
+        musicListInnerFrame.Parent = musicListContainer
+        local musicListLayout = Instance.new("UIListLayout")
+        musicListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        musicListLayout.Padding = UDim.new(0, 2)
+        musicListLayout.Parent = musicListInnerFrame
+        local musicListPadding = Instance.new("UIPadding")
+        musicListPadding.PaddingLeft = UDim.new(0, 6)
+        musicListPadding.PaddingRight = UDim.new(0, 6)
+        musicListPadding.Parent = musicListInnerFrame
+
+        local selectedMusicRow = nil
+        local selectedMusicFileName = nil
+        local musicSoundInstance = nil
+        local musicPlayToggleRef
+        local musicPlayToggleObjects
+
+        local function stopMusicPlayer()
+            if musicSoundInstance and musicSoundInstance.Parent then
+                musicSoundInstance:Stop()
+                musicSoundInstance:Destroy()
+            end
+            musicSoundInstance = nil
+        end
+
+        local function updateMusicPlayToggleState()
+            local hasSelection = selectedMusicFileName and selectedMusicFileName ~= ""
+            local toggleBtn = musicPlayToggleObjects and musicPlayToggleObjects["toggle"]
+            if toggleBtn then
+                toggleBtn.Active = hasSelection
+                if not hasSelection and musicPlayToggleRef and musicPlayToggleRef.get and musicPlayToggleRef:get() then
+                    musicPlayToggleRef:set(false)
+                end
+            end
+        end
+
+        local function startMusicPlayer(fileName)
+            if not fileName or fileName == "" then return end
+            if not getcustomasset or not isfile or not isfile(musicplayerFolder .. "/" .. fileName) then
+                Window:Notify({Title = "Music Player", Desc = "File not found or getcustomasset not available.", Time = 3, Type = "error"})
+                return
+            end
+            stopMusicPlayer()
+            local ok, soundId = pcall(function() return getcustomasset(musicplayerFolder .. "/" .. fileName) end)
+            if not ok or not soundId or soundId == "" then
+                Window:Notify({Title = "Music Player", Desc = "Could not load: " .. fileName, Time = 3, Type = "error"})
+                return
+            end
+            local v = (type(Globals.MusicPlayerVolume) == "number" and Globals.MusicPlayerVolume >= 0 and Globals.MusicPlayerVolume <= 1) and Globals.MusicPlayerVolume or 0.5
+            musicSoundInstance = Instance.new("Sound")
+            musicSoundInstance.SoundId = soundId
+            musicSoundInstance.Volume = math.clamp(v * 10, 0, 10)
+            musicSoundInstance.Looped = true
+            musicSoundInstance.Parent = game:GetService("SoundService")
+            musicSoundInstance:Play()
+            Window:Notify({Title = "Music Player", Desc = "Playing: " .. fileName, Time = 2, Type = "normal"})
+        end
+
+        local function refreshMusicListDisplay()
+            if not musicListInnerFrame or not musicListInnerFrame.Parent then return end
+            selectedMusicRow = nil
+            selectedMusicFileName = nil
+            for _, c in ipairs(musicListInnerFrame:GetChildren()) do
+                if c:IsA("TextButton") or c:IsA("TextLabel") then c:Destroy() end
+            end
+            local names = getMusicList()
+            for i, fullName in ipairs(names) do
+                local row = Instance.new("TextButton")
+                row.Name = "Music_" .. fullName
+                row.Size = UDim2.new(1, 0, 0, 16)
+                row.Position = UDim2.new(0, 0, 0, 0)
+                row.BackgroundTransparency = 1
+                row.BorderSizePixel = 0
+                row.Text = fullName
+                row.TextColor3 = normalTextColor
+                row.TextSize = math.max(10, fontSize - 1)
+                row.TextXAlignment = Enum.TextXAlignment.Left
+                row.TextTruncate = Enum.TextTruncate.AtEnd
+                row.AutoButtonColor = false
+                row.LayoutOrder = i
+                if fontFace then pcall(function() row.FontFace = fontFace end) end
+                row.Parent = musicListInnerFrame
+                row.MouseButton1Click:Connect(function()
+                    if selectedMusicRow then selectedMusicRow.TextColor3 = normalTextColor end
+                    selectedMusicRow = row
+                    selectedMusicFileName = fullName
+                    row.TextColor3 = accentColor
+                    updateMusicPlayToggleState()
+                    -- When Play is already on, switching selection changes the song
+                    if Globals.MusicPlayerPlaying then
+                        local fn = fullName
+                        if not fn:lower():match("%.mp3$") then fn = fn .. ".mp3" end
+                        SetSetting("MusicPlayerPlayingConfig", fn)
+                        startMusicPlayer(fn)
+                    end
+                end)
+            end
+            if #names == 0 then
+                local empty = Instance.new("TextLabel")
+                empty.Size = UDim2.new(1, 0, 0, 16)
+                empty.BackgroundTransparency = 1
+                empty.Text = ""
+                empty.TextColor3 = theme["Text Inactive"] or Color3.fromRGB(188, 188, 188)
+                empty.TextSize = math.max(10, fontSize - 1)
+                empty.TextXAlignment = Enum.TextXAlignment.Left
+                empty.LayoutOrder = 0
+                if fontFace then pcall(function() empty.FontFace = fontFace end) end
+                empty.Parent = musicListInnerFrame
+            end
+            updateMusicPlayToggleState()
+        end
+
+        -- Auto-refresh list when files are added/removed from Trixion Hub/musicplayer
+        local lastMusicListHash = nil
+        local function getMusicListHash()
+            local list = getMusicList()
+            return #list .. ":" .. table.concat(list, "|")
+        end
+        task.spawn(function()
+            while musicPlayerContent and musicPlayerContent.Parent do
+                task.wait(2)
+                if not musicListInnerFrame or not musicListInnerFrame.Parent then break end
+                local hash = getMusicListHash()
+                if lastMusicListHash ~= nil and hash ~= lastMusicListHash then
+                    local wasSelected = selectedMusicFileName
+                    refreshMusicListDisplay()
+                    if wasSelected and wasSelected ~= "" then
+                        local names = getMusicList()
+                        for _, name in ipairs(names) do
+                            if name == wasSelected then
+                                for _, child in ipairs(musicListInnerFrame:GetChildren()) do
+                                    if child:IsA("TextButton") and child.Text == wasSelected then
+                                        selectedMusicRow = child
+                                        selectedMusicFileName = wasSelected
+                                        child.TextColor3 = accentColor
+                                        break
+                                    end
+                                end
+                                break
+                            end
+                        end
+                    end
+                end
+                lastMusicListHash = hash
+            end
+        end)
+        lastMusicListHash = getMusicListHash()
+
+        refreshMusicListDisplay()
+
+        _, musicPlayToggleRef, musicPlayToggleObjects = Settings:Toggle({
+            Title = "Play",
+            Desc = "Select an mp3 from the list above, then enable to play. Saves when enabled.",
+            Value = Globals.MusicPlayerPlaying,
+            Callback = function(state)
+                if state then
+                    local name = selectedMusicFileName and selectedMusicFileName:gsub("%.mp3$", "") or nil
+                    if not name or name == "" then
+                        if musicPlayToggleRef and musicPlayToggleRef.set then musicPlayToggleRef:set(false) end
+                        SetSetting("MusicPlayerPlaying", false)
+                        SetSetting("MusicPlayerPlayingConfig", "")
+                        return
+                    end
+                    local fullName = selectedMusicFileName
+                    if not fullName:lower():match("%.mp3$") then fullName = fullName .. ".mp3" end
+                    SetSetting("MusicPlayerPlaying", true)
+                    SetSetting("MusicPlayerPlayingConfig", fullName)
+                    startMusicPlayer(fullName)
+                else
+                    stopMusicPlayer()
+                    SetSetting("MusicPlayerPlaying", false)
+                    SetSetting("MusicPlayerPlayingConfig", "")
+                end
+            end
+        })
+        updateMusicPlayToggleState()
+
+        -- Volume - 0 + on same row as Play toggle (right side), no background on -/+
+        do
+            local toggleRow = musicPlayToggleObjects and musicPlayToggleObjects["toggle"]
+            if toggleRow then
+                local volWrap = Instance.new("Frame")
+                volWrap.Name = "VolumeWrap"
+                volWrap.Size = UDim2.new(0, 72, 0, 16)
+                volWrap.Position = UDim2.new(1, 0, 0, 0)
+                volWrap.AnchorPoint = Vector2.new(1, 0)
+                volWrap.BackgroundTransparency = 1
+                volWrap.BorderSizePixel = 0
+                volWrap.Parent = toggleRow
+                local volList = Instance.new("UIListLayout")
+                volList.FillDirection = Enum.FillDirection.Horizontal
+                volList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+                volList.VerticalAlignment = Enum.VerticalAlignment.Center
+                volList.Padding = UDim.new(0, 4)
+                volList.SortOrder = Enum.SortOrder.LayoutOrder
+                volList.Parent = volWrap
+                local volMinus = Instance.new("TextButton")
+                volMinus.Name = "VolMinus"
+                volMinus.Size = UDim2.new(0, 18, 0, 14)
+                volMinus.BackgroundTransparency = 1
+                volMinus.BorderSizePixel = 0
+                volMinus.Text = "-"
+                volMinus.TextColor3 = theme.Text or Color3.fromRGB(255, 255, 255)
+                volMinus.TextSize = fontSize
+                volMinus.LayoutOrder = 1
+                if fontFace then pcall(function() volMinus.FontFace = fontFace end) end
+                volMinus.Parent = volWrap
+                local volLabel = Instance.new("TextLabel")
+                volLabel.Name = "VolValue"
+                volLabel.Size = UDim2.new(0, 24, 0, 14)
+                volLabel.BackgroundTransparency = 1
+                volLabel.Text = tostring(math.floor((Globals.MusicPlayerVolume or 0.5) * 100))
+                volLabel.TextColor3 = theme.Text or Color3.fromRGB(255, 255, 255)
+                volLabel.TextSize = fontSize
+                volLabel.LayoutOrder = 2
+                if fontFace then pcall(function() volLabel.FontFace = fontFace end) end
+                volLabel.Parent = volWrap
+                local volPlus = Instance.new("TextButton")
+                volPlus.Name = "VolPlus"
+                volPlus.Size = UDim2.new(0, 18, 0, 14)
+                volPlus.BackgroundTransparency = 1
+                volPlus.BorderSizePixel = 0
+                volPlus.Text = "+"
+                volPlus.TextColor3 = theme.Text or Color3.fromRGB(255, 255, 255)
+                volPlus.TextSize = fontSize
+                volPlus.LayoutOrder = 3
+                if fontFace then pcall(function() volPlus.FontFace = fontFace end) end
+                volPlus.Parent = volWrap
+                local function updateVolumeDisplay()
+                    local v = (type(Globals.MusicPlayerVolume) == "number" and Globals.MusicPlayerVolume >= 0 and Globals.MusicPlayerVolume <= 1) and Globals.MusicPlayerVolume or 0.5
+                    volLabel.Text = tostring(math.floor(v * 100))
+                    if musicSoundInstance and musicSoundInstance.Parent then
+                        musicSoundInstance.Volume = math.clamp(v * 10, 0, 10)
+                    end
+                end
+                volMinus.MouseButton1Click:Connect(function()
+                    local v = (type(Globals.MusicPlayerVolume) == "number" and Globals.MusicPlayerVolume) or 0.5
+                    v = math.clamp(v - 0.1, 0, 1)
+                    SetSetting("MusicPlayerVolume", v)
+                    updateVolumeDisplay()
+                end)
+                volPlus.MouseButton1Click:Connect(function()
+                    local v = (type(Globals.MusicPlayerVolume) == "number" and Globals.MusicPlayerVolume) or 0.5
+                    v = math.clamp(v + 0.1, 0, 1)
+                    SetSetting("MusicPlayerVolume", v)
+                    updateVolumeDisplay()
+                end)
+            end
+        end
+
+        if Globals.MusicPlayerPlaying and type(Globals.MusicPlayerPlayingConfig) == "string" and Globals.MusicPlayerPlayingConfig:gsub("%s+", "") ~= "" then
+            local fileToPlay = tostring(Globals.MusicPlayerPlayingConfig):gsub("^%s+", ""):gsub("%s+$", "")
+            if not fileToPlay:lower():match("%.mp3$") then fileToPlay = fileToPlay .. ".mp3" end
+            task.defer(function()
+                if isfile and isfile(musicplayerFolder .. "/" .. fileToPlay) then
+                    startMusicPlayer(fileToPlay)
+                end
+            end)
+        end
+    end
 
     local configSec = Settings:Section({Title = "AutoStrategy", Side = "Left"})
     if not configSec or not configSec.objects or not configSec.objects.content then end
