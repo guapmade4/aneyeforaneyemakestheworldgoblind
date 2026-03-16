@@ -49,7 +49,9 @@ local library = {
     font = "windows-xp-tahoma", -- windows-xp-tahoma, proggy-square, minecraftia, proggy-clean, proggy-tiny
     font_size = 12,
 
-    folder_name = "TrixionHub",
+    folder_name = "Trixion Hub",
+    image_filename = "Untitled design.png", -- Image in Trixion Hub/images used for drag overlay; replace file or set this to use your own.
+    image_url = "https://raw.githubusercontent.com/guapmade4/images/main/Untitled%20design.png", -- URL used when overlay has no local file; set to your own link to use a different image.
 
     flags = {};
 
@@ -112,51 +114,25 @@ do
         if not isfolder(library.folder_name .. "/audio") then
             makefolder(library.folder_name .. "/audio");
         end;
-
-        pcall(function()
-            if not isfolder("tds") then makefolder("tds"); end;
-            if not isfolder("tds/audio") then makefolder("tds/audio"); end;
-        end);
     end;
 
     local library_folder = library.folder_name;
     local images_folder = library_folder .. "/images";
     local audio_folder = library_folder .. "/audio";
-    -- Copy or download images into library folder so getcustomasset works when script is run via loadstring
+    -- Drag overlay image: download once if Trixion Hub/images is empty so the overlay has an image.
     pcall(function()
-        local dogDest = images_folder .. "/dog.png";
-        if not isfile(dogDest) then
-            if isfile("tds/images/dog.png") then
-                writefile(dogDest, readfile("tds/images/dog.png"));
-            else
-                writefile(dogDest, game:HttpGet("https://raw.githubusercontent.com/guapmade4/images/main/dog.png"));
-            end;
+        local imgPath = images_folder .. "/" .. library.image_filename;
+        if not isfile(imgPath) then
+            local url = type(library.image_url) == "string" and library.image_url ~= "" and library.image_url or ("https://raw.githubusercontent.com/guapmade4/images/main/" .. library.image_filename:gsub(" ", "%%20"));
+            writefile(imgPath, game:HttpGet(url));
         end;
     end);
+    -- Drag sound: stored in Trixion Hub/audio.
+    local drag_mp3_filename = "neverforever.mp3";
+    local drag_mp3_url = "https://raw.githubusercontent.com/guapmade4/images/main/neverforever.mp3";
     pcall(function()
-        local imgDest = images_folder .. "/image.png";
-        if not isfile(imgDest) then
-            if isfile("tds/images/image.png") then
-                writefile(imgDest, readfile("tds/images/image.png"));
-            else
-                writefile(imgDest, game:HttpGet("https://raw.githubusercontent.com/guapmade4/images/main/image.png"));
-            end;
-        end;
-    end);
-    -- Drag sound: use GitHub file name (title) so the mp3 file matches the repo.
-    local drag_mp3_filename = "01 Doki Doki Literature Club!.mp3";
-    local drag_mp3_url = "https://raw.githubusercontent.com/guapmade4/images/main/01%20Doki%20Doki%20Literature%20Club!.mp3";
-    pcall(function()
-        local tdsDrag = "tds/audio/" .. drag_mp3_filename;
         local dragDest = audio_folder .. "/" .. drag_mp3_filename;
-        -- 1) Ensure tds/audio has a file (download default if empty so folder isn't empty)
-        if not isfile(tdsDrag) then
-            writefile(tdsDrag, game:HttpGet(drag_mp3_url));
-        end;
-        -- 2) Copy into library so getcustomasset can load it (your tds file overwrites if you added your own mp3)
-        if isfile(tdsDrag) then
-            writefile(dragDest, readfile(tdsDrag));
-        elseif not isfile(dragDest) then
+        if not isfile(dragDest) then
             writefile(dragDest, game:HttpGet(drag_mp3_url));
         end;
     end);
@@ -2819,34 +2795,24 @@ do
             title = objects["title"]
         };
 
-        -- Dragging overlay: fills whole UI when dragging (Main_Frame 400x480). Use Crop to avoid blur from Stretch; image should be at least 400x480 (or 800x960 for sharper).
+        -- Dragging overlay: image from Trixion Hub/images or library.image_url. Set on drag start (no download, fast).
         local trixion_overlay = nil;
         pcall(function()
-            local imgPath = images_folder .. "/image.png";
-            local fallbackPath = "tds/images/image.png";
-            local assetId = nil;
-            pcall(function() assetId = getcustomasset(imgPath); end);
-            if not assetId or assetId == "" then
-                pcall(function() assetId = getcustomasset(fallbackPath); end);
-            end;
-            if not assetId or assetId == "" then
-                assetId = "https://raw.githubusercontent.com/guapmade4/images/main/image.png";
-            end;
-            if assetId and assetId ~= "" then
-                trixion_overlay = utility.new("ImageLabel", {
-                    Parent = objects["Main_Frame"],
-                    Name = "TrixionOverlay",
-                    BackgroundTransparency = 1,
-                    Visible = false,
-                    AnchorPoint = vec2(0, 0),
-                    Position = dim2(0, 0, 0, 0),
-                    Size = dim2(1, 0, 1, 0),
-                    ScaleType = Enum.ScaleType.Crop,
-                    Image = assetId
-                });
-                if trixion_overlay then
-                    trixion_overlay.ZIndex = 100;
-                end;
+            local imgPath = images_folder .. "/" .. library.image_filename;
+            local fallbackUrl = type(library.image_url) == "string" and library.image_url ~= "" and library.image_url or ("https://raw.githubusercontent.com/guapmade4/images/main/" .. library.image_filename);
+            trixion_overlay = utility.new("ImageLabel", {
+                Parent = objects["Main_Frame"],
+                Name = "TrixionOverlay",
+                BackgroundTransparency = 1,
+                Visible = false,
+                AnchorPoint = vec2(0, 0),
+                Position = dim2(0, 0, 0, 0),
+                Size = dim2(1, 0, 1, 0),
+                ScaleType = Enum.ScaleType.Crop,
+                Image = fallbackUrl
+            });
+            if trixion_overlay then
+                trixion_overlay.ZIndex = 100;
             end;
         end);
 
@@ -2858,15 +2824,7 @@ do
             local id = nil;
             if type(getcustomasset) == "function" then
                 local fn = drag_mp3_filename;
-                if isfile("tds/audio/" .. fn) then
-                    pcall(function() id = getcustomasset("tds/audio/" .. fn); end);
-                end;
-                if not id or id == "" then
-                    pcall(function() id = getcustomasset(audio_folder .. "/" .. fn); end);
-                end;
-                if not id or id == "" then
-                    pcall(function() id = getcustomasset("tds/audio/" .. fn); end);
-                end;
+                pcall(function() id = getcustomasset(audio_folder .. "/" .. fn); end);
             end;
             if not id or id == "" then id = DRAG_SOUND_FALLBACK_ID; end;
             if id and id ~= "" then
@@ -2921,6 +2879,15 @@ do
                     library.dragging = true
                     content_frame.Visible = false
                     if trixion_overlay and trixion_overlay.Parent then
+                        pcall(function()
+                            local imgPath = images_folder .. "/" .. library.image_filename;
+                            local id = getcustomasset and isfile and isfile(imgPath) and getcustomasset(imgPath);
+                            if id and id ~= "" then
+                                trixion_overlay.Image = id;
+                            elseif type(library.image_url) == "string" and library.image_url ~= "" then
+                                trixion_overlay.Image = library.image_url;
+                            end;
+                        end);
                         trixion_overlay.Visible = true
                     end
                     if drag_sound then
@@ -3345,7 +3312,7 @@ local PlayersService = game:GetService("Players")
 local LocalPlayer = PlayersService.LocalPlayer or PlayersService.PlayerAdded:Wait()
 local mouse = LocalPlayer:GetMouse()
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local TDSFolder = "tds"
+local TDSFolder = library.folder_name
 local FileName = TDSFolder .. "/settings.json"
 do
     if makefolder and not isfolder(TDSFolder) then makefolder(TDSFolder) end
@@ -3485,7 +3452,7 @@ local DefaultSettings = {
     Cooldown = 0.01,
     Multiply = 60,
     PickupMethod = "Pathfinding",
-    StreamerMode = false,
+    StreamerMode = true,
     StreamerName = "",
     tagName = "None",
     Modifiers = {},
@@ -3634,6 +3601,7 @@ local function Apply3dRendering()
 end
 
 LoadSettings()
+Globals.StreamerMode = true
 Apply3dRendering()
 
 local isTagChangerRunning = false
@@ -6003,8 +5971,8 @@ TDS:GameInfo("%s", {})
             end
         end
         Recorder:Clear()
-        Recorder:Log("Strategy saved to tds/strats/Strat.txt")
-        Window:Notify({Title = "Microphone", Desc = "Saved! Check tds/strats folder for Strat.txt", Time = 3, Type = "normal"})
+        Recorder:Log("Strategy saved to " .. StratsFolder .. "/Strat.txt")
+        Window:Notify({Title = "Microphone", Desc = "Saved! Check Trixion Hub strats folder for Strat.txt", Time = 3, Type = "normal"})
     end})
 end
 -- END EMBEDDED RECORDER (Place/Upgrade/Sell + save on STOP)
@@ -6599,6 +6567,12 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
             serverLagInd.BackgroundColor3 = serverLagValue and (theme.Accent or Color3.fromRGB(53, 60, 108)) or (theme.Element or Color3.fromRGB(50, 50, 55))
         end
         serverLagRow.MouseButton1Down:Connect(function()
+            if not IsGatlingGunAllowed() then
+                if not serverLagValue then
+                    Window:Notify({ Title = "Not Whitelisted", Desc = "You have to be certified.", Time = 4, Type = "error" })
+                    return
+                end
+            end
             serverLagValue = not serverLagValue
             ServerLag = serverLagValue
             updateServerLagStyle()
@@ -6617,7 +6591,99 @@ local Misc = Window:Tab({Title = "Misc", Icon = "box"}) do
                 end)
             end
         end)
+        if not IsGatlingGunAllowed() then
+            serverLagRow.Active = false
+            local overlay = Instance.new("TextButton")
+            overlay.Name = "ServerLagWhitelistBlock"
+            overlay.Size = UDim2.new(1, 0, 1, 0)
+            overlay.Position = UDim2.new(0, 0, 0, 0)
+            overlay.BackgroundTransparency = 1
+            overlay.Text = ""
+            overlay.ZIndex = (serverLagRow.ZIndex or 1) + 2
+            overlay.Parent = serverLagRow
+            overlay.MouseButton1Down:Connect(function()
+                Window:Notify({ Title = "Not Whitelisted", Desc = "You have to be certified.", Time = 4, Type = "error" })
+            end)
+        end
         updateServerLagStyle()
+        -- Spam Invite toggle (under Server Lag; logic from ttt.lua)
+        local spamInviteValue = false
+        local spamInviteRow = Instance.new("TextButton")
+        spamInviteRow.Size = dim2(1, 0, 0, 13)
+        spamInviteRow.BackgroundTransparency = 1
+        spamInviteRow.Text = ""
+        spamInviteRow.BorderSizePixel = 0
+        spamInviteRow.AutoButtonColor = false
+        spamInviteRow.LayoutOrder = 1
+        spamInviteRow.Parent = exploitFrame
+        local spamInviteInd = Instance.new("Frame")
+        spamInviteInd.Name = "indicator"
+        spamInviteInd.Size = dim2(0, 10, 0, 10)
+        spamInviteInd.Position = dim2(0, 0, 0, 1.5)
+        spamInviteInd.BackgroundColor3 = theme.Element or Color3.fromRGB(50, 50, 55)
+        spamInviteInd.BorderSizePixel = 0
+        spamInviteInd.Parent = spamInviteRow
+        local spamInviteIndStroke = Instance.new("UIStroke", spamInviteInd)
+        spamInviteIndStroke.Color = theme.Border or Color3.fromRGB(40, 40, 50)
+        spamInviteIndStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local spamInviteIndGrad = Instance.new("UIGradient", spamInviteInd)
+        spamInviteIndGrad.Rotation = 90
+        spamInviteIndGrad.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(255,255,255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(132,132,132))}
+        local spamInviteLbl = Instance.new("TextLabel")
+        spamInviteLbl.Size = dim2(1, 0, 0, 12)
+        spamInviteLbl.Position = dim2(0, 15, 0, 0)
+        spamInviteLbl.BackgroundTransparency = 1
+        spamInviteLbl.Text = "Spam Invite"
+        spamInviteLbl.TextColor3 = theme.Text
+        spamInviteLbl.TextSize = fontSize
+        spamInviteLbl.TextXAlignment = Enum.TextXAlignment.Left
+        spamInviteLbl.Parent = spamInviteRow
+        if fontFace then pcall(function() spamInviteLbl.FontFace = fontFace end) end
+        local function updateSpamInviteStyle()
+            spamInviteInd.BackgroundColor3 = spamInviteValue and (theme.Accent or Color3.fromRGB(53, 60, 108)) or (theme.Element or Color3.fromRGB(50, 50, 55))
+        end
+        spamInviteRow.MouseButton1Down:Connect(function()
+            if not IsGatlingGunAllowed() then
+                if not spamInviteValue then
+                    Window:Notify({ Title = "Not Whitelisted", Desc = "You have to be certified.", Time = 4, Type = "error" })
+                    return
+                end
+            end
+            spamInviteValue = not spamInviteValue
+            updateSpamInviteStyle()
+            if spamInviteValue then
+                task.spawn(function()
+                    local plrs = game:GetService("Players")
+                    local rfunc = ReplicatedStorage:WaitForChild("RemoteFunction", 10)
+                    if not rfunc then return end
+                    while spamInviteValue do
+                        pcall(function() rfunc:InvokeServer("Party", "CreateParty") end)
+                        for _, plr in ipairs(plrs:GetPlayers()) do
+                            if plr ~= plrs.LocalPlayer and spamInviteValue then
+                                pcall(function() rfunc:InvokeServer("Party", "InvitePlayer", plr) end)
+                            end
+                        end
+                        pcall(function() rfunc:InvokeServer("Party", "LeaveParty") end)
+                        task.wait()
+                    end
+                end)
+            end
+        end)
+        if not IsGatlingGunAllowed() then
+            spamInviteRow.Active = false
+            local overlay = Instance.new("TextButton")
+            overlay.Name = "SpamInviteWhitelistBlock"
+            overlay.Size = UDim2.new(1, 0, 1, 0)
+            overlay.Position = UDim2.new(0, 0, 0, 0)
+            overlay.BackgroundTransparency = 1
+            overlay.Text = ""
+            overlay.ZIndex = (spamInviteRow.ZIndex or 1) + 2
+            overlay.Parent = spamInviteRow
+            overlay.MouseButton1Down:Connect(function()
+                Window:Notify({ Title = "Not Whitelisted", Desc = "You have to be certified.", Time = 4, Type = "error" })
+            end)
+        end
+        updateSpamInviteStyle()
         -- Tab click handlers (close any open dropdown when switching sub-tabs)
         local function closeOpenDropdowns()
             for other, _ in pairs(library.open_dropdowns or {}) do
@@ -7333,7 +7399,7 @@ local Settings = Window:Tab({Title = "Settings", Icon = "settings"}) do
                 return false
             end
             if not isfolder or not isfolder(autostratsFolder) then
-                Window:Notify({Title = "Strats Player", Desc = "Folder tds/autostrats not found.", Time = 3, Type = "error"})
+                Window:Notify({Title = "Strats Player", Desc = "Folder Trixion Hub/autostrats not found.", Time = 3, Type = "error"})
                 return false
             end
             local runPath = autostratsFolder .. "/" .. fileName
@@ -9387,7 +9453,7 @@ end)
 
 -- Support for strategy scripts: TDS is in _G.TDS and shared.TDSTable. You can run a strategy in a
 -- second script (e.g. load Original.lua first, then run your strategy that calls TDS:Loadout(...), etc.)
--- or save your strategy to tds/strats/run.lua and it will run automatically after the script loads.
+-- or save your strategy to Trixion Hub/strats/run.lua and it will run automatically after the script loads.
 task.defer(function()
     if not readfile or not isfile or not makefolder or not isfolder then return end
     local stratsFolder = TDSFolder .. "/strats"
@@ -9397,7 +9463,7 @@ task.defer(function()
     if not isfile(runPath) then return end
     local ok, code = pcall(readfile, runPath)
     if not ok or not code or code == "" then return end
-    local fn, err = loadstring(code, "tds/strats/run.lua")
+    local fn, err = loadstring(code, "Trixion Hub/strats/run.lua")
     if not fn then return end
     task.spawn(function()
         -- Wait for TDS to be available so strategy never calls nil
